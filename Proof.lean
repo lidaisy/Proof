@@ -1,3 +1,16 @@
--- This module serves as the root of the `Proof` library.
--- Import modules here that should be built as part of the library.
-import Proof.Basic
+import Proof.Syntax
+import Proof.Semantics
+import Proof.Stack
+import Proof.Analysis
+import Proof.CorrectnessRelation
+import Proof.REInv
+import Proof.AccessImpliesDep
+import Proof.StackDepChain
+import Proof.PartialOnStack
+import Proof.AbstractDetectsCycle
+import Proof.Algorithm.Definition
+import Proof.Algorithm.Conclusion
+import Proof.Algorithm.Cycle
+import Proof.Algorithm.LessThanInv
+import Proof.Algorithm.Termination
+import Proof.Algorithm.EndsInFixPoint
