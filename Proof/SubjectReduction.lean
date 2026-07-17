@@ -1,5 +1,6 @@
 import Proof.Semantics
 import Proof.Analysis
+import Proof.Theorem1
 
 /-
   Subject reduction, take 2 — the `k_abstracts` lemma and the invariant it
@@ -45,16 +46,6 @@ namespace Proof
   programs (class bodies and object initialisers) must not contain it.  `RE`
   produces only source expressions, so under `ValueFreeProgram` every reachable
   expression is value-free (`RE.valueFree`). -/
-
-/-- `e` contains no value literal `Expr.val v`. -/
-def ValueFree : Expr → Prop
-  | Expr.thisE      => True
-  | Expr.paramE     => True
-  | Expr.newC _ a b => ValueFree a ∧ ValueFree b
-  | Expr.app a b    => ValueFree a ∧ ValueFree b
-  | Expr.proj a _   => ValueFree a
-  | Expr.gproj _ _  => True
-  | Expr.val _      => False
 
 /-- Well-formedness of a program: every class body and every object
     initialiser is value-free. -/
@@ -194,44 +185,6 @@ theorem KJ.kjr_subset {G : GlobName} {σ : Sigma} {L : Program} {H : Heap}
       | app h₀ => exact Set.biUnion_subset_biUnion_left (ih hvf.1 h₀)
   | val => intro hvf; simp [ValueFree] at hvf
 
-/-! ### The invariant components
-
-  `ParamInv`/`FldInv`/`GTableInv`/`RMInv` are verbatim from `Theorem1.lean`;
-  `RetKInv` is new and replaces `RetInv`. -/
-
-/-- Heap typing (Fld soundness): for every allocated object `H ℓ = C(v₁, v₂)`
-    and field index `i`, if that field holds a location `ℓ'` pointing to an
-    allocated object `H ℓ' = C'(…)`, then `C'` lies in `σ.Fldᵢ((G, C))`. -/
-def FldInv (σ : Sigma) (H : Heap) (S : Stack) : Prop :=
-  ∀ (S' : Stack) G l (C : ClassName) (v₁ v₂ : Value),
-    S' <:+ S → Stack.TopInit S' G
-    → H l = some (ClsIns.mk C G v₁ v₂)
-      → ∀ i ℓ' c', (ClsIns.mk C G v₁ v₂).field i = Value.loc ℓ' → H ℓ' = some c'
-        → c'.cls ∈ σ.Fld i G C
-
-/-- Global-table typing: initialized global fields have their classes inside
-    `GFldᵢ`.  (This is the component whose absence let an arbitrary `Γ` refute
-    `k_abstracts` through `E-GProj`.) -/
-def GTableInv (σ : Sigma) (H : Heap) (Γ : GTable) : Prop :=
-  ∀ g o, Γ g = some o →
-    ∀ i ℓ' c', o.field i = some (Value.loc ℓ') → H ℓ' = some c' →
-      c'.cls ∈ σ.GFld i g
-
-/-- Param soundness of the call stack: every call frame's argument has its class
-    inside `σ.Param((G, D))` for the receiver's class `D`. -/
-def ParamInv (σ : Sigma) (H : Heap) (S : Stack) : Prop :=
-  ∀ (S' : Stack) i cfs r t p κ G C, S' <:+ S → S'.topInit = some (i, cfs, r)
-    → Stack.TopInit S' G → Frame.call t p κ ∈ cfs → H t = some C
-      → ∀ ℓ D, p = Value.loc ℓ → H ℓ = some D
-        → D.cls ∈ σ.Param G C.cls
-
-/-- RM soundness of the whole stack: in every suffix of `S`, the call frames
-    above the suffix's topmost init frame have their receiver's class in
-    `σ.RM G` for that init frame's global `G`. -/
-def RMInv (σ : Sigma) (H : Heap) (S : Stack) : Prop :=
-  ∀ (S' : Stack) i cfs r f G l C, S' <:+ S → S'.topInit = some (i, cfs, r)
-  → Stack.TopInit S' G → f ∈ cfs → f.loc = some l → H l = some C → C.cls ∈ σ.RM G
-
 /-- Ret soundness of the focus against a pending call frame, `⇓ᴷ`-aware:
     whenever the top of the stack is a call frame with receiver `t` of class
     `D`, the *runtime* `⇓ᴷ` of the whole focus is bounded by `σ.Ret G D.cls`.
@@ -244,32 +197,6 @@ def RetKInv (σ : Sigma) (L : Program) (H : Heap) (S : Stack) (e : Expr) : Prop 
   ∀ G, Stack.TopInit S G
     → ∀ t p κ, S.topCall = some (Frame.call t p κ) → ∀ D, H t = some D
       → ∀ K, KJR G σ L H S e K → K ⊆ σ.Ret G D.cls
-
-/-- `RetKInv` subsumes the old `RetInv`: a returning value's class is bounded
-    by `σ.Ret` for the topmost call frame's receiver. -/
-theorem RetKInv.val_case {σ : Sigma} {L : Program} {H : Heap} {S : Stack}
-    {v : Value} (h : RetKInv σ L H S (Expr.val v))
-    {G} (hG : Stack.TopInit S G)
-    {t p κ} (htc : S.topCall = some (Frame.call t p κ))
-    {D} (hHt : H t = some D)
-    {ℓ' C} (hv : v = Value.loc ℓ') (hHl : H ℓ' = some C) :
-    C.cls ∈ σ.Ret G D.cls := by
-  subst hv
-  exact h G hG t p κ htc D hHt _ KJR.val (by simp [Heap.clsOf, hHl])
-
-/-! ### The subject-reduction invariant -/
-
-/-- The subject-reduction invariant on configurations: the call stack is
-    `Param`/`RM`-sound, the heap and global table are value-class sound, and
-    any pending return is `Ret`-sound for the whole focus (`RetKInv`). -/
-def Inv (σ : Sigma) (L : Program) : Config → Prop
-  | .mk H Γ S e =>
-    ParamInv σ H S
-    ∧ FldInv σ H S
-    ∧ GTableInv σ H Γ
-    ∧ RetKInv σ L H S e
-    ∧ RMInv σ H S
-  | .crash => True
 
 /-! ### `k_abstracts` -/
 
@@ -293,17 +220,40 @@ def Inv (σ : Sigma) (L : Program) : Config → Prop
     `Step` preserves `Inv` and shrinks the focus's `KJR` (same-level steps) or
     re-establishes it from `FixPoint` (`E-AppBeta`/`E-Ret`/`I-*`, via
     `ret_init`, `param_re`, `rm_closed` and `RetKInv`).  At the final
-    configuration `KJR` of `val (loc l)` is `{C.cls}` by `hH'l`. -/
+    configuration `KJR` of `val (loc l)` is `{C.cls}` by `hH'l`.
+
+    **v3 REFUTED (2026-07-09, `KAbstractsCheck3.lean`, two Lean-verified
+    counterexamples):**
+
+    (A) *Danglers*: `Inv` never requires stored locations to be allocated, so
+    `Γ` may hold a dangling `loc 5` (`GTableInv` vacuous); `E-NewAlloc`'s only
+    freshness premise is `H ℓ = none`, so the run may allocate at that very
+    `ℓ = 5`, laundering a class `σ` never saw into a focus with `⇓ᴷ = ∅`.
+    Fix: add a closedness component to `Inv` (all locations occurring in the
+    focus, stack frames, heap fields and `Γ` entries are allocated).
+
+    (B) *Cross-global field flow* — a gap in the paper's Step 2f, not just in
+    `Inv`: objects allocated during `G₀`'s initialization get their fields
+    bounded only in `Fldᵢ((G₀,·))` (`fld_re` fires on `RE G₀`); code reachable
+    from `G₁` receiving them via `G₀.i ⇓ᴷ GFldᵢ(G₀)` projects fields through
+    `Fldᵢ((G₁,·))`, and no `FixPoint` rule relates the two.  Fix: extend
+    `FixPoint` (and paper Step 2f) with an import rule, e.g.
+    `RE σ L G c (gproj G₀ i) → ∀ j D, σ.Fld j G₀ D ⊆ σ.Fld j G D`. -/
 theorem k_abstracts {σ : Sigma} {L : Program} {e : Expr} {H H' : Heap}
     {Γ Γ' : GTable} {S : Stack} {l : Loc} {C D : ClsIns} {G : GlobName}
     {K : Set ClassName}
     (hσ : FixPoint σ L) (hwf : ValueFreeProgram L)
     (hG : Stack.TopInit S G) (hD : Stack.This S H D)
-    (hinv : Inv σ L (.mk H Γ S e))
+    (hinv : Inv σ (.mk H Γ S e))
     (hre : RE σ L G D.cls e)
     (hred : Star L (.mk H Γ S e) (.mk H' Γ' S (Expr.val (Value.loc l))))
     (hH'l : H' l = some C)
     (hKj : KJC G σ L D.cls e K) :
-    C.cls ∈ K := sorry
+    C.cls ∈ K :=
+
+
+
+
+    sorry
 
 end Proof

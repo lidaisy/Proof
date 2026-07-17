@@ -79,13 +79,13 @@ inductive Frame where
   | init2 (g : GlobName) (k : Expr) : Frame
   | call (t : Loc) (p : Value) (κ : ECtx): Frame
 
-/-- The global name recorded by a frame. -/
+/-- The global name recorded by an init frame. -/
 def Frame.glob : Frame → Option GlobName
   | init1 g _ _ => g
   | init2 g _   => g
   | call _ _ _ => none
 
-/-- The global name recorded by a frame. -/
+/-- The class recorded by a call frame. -/
 def Frame.loc : Frame → Option Loc
   | init1 _ _ _ => none
   | init2 _ _   => none
@@ -131,43 +131,22 @@ def Stack.This (S: Stack) (H : Heap) (C : ClsIns) : Prop :=
 /-- A configuration `cfg ::= ⟨H, Γ, e⟩`, with a separate `Crash`. -/
 inductive Config
   | mk (H : Heap) (Γ : GTable) (S: Stack) (e : Expr)
-  -- | mkC (H : Heap) (Γ : GTable) (S: Stack) (t: Loc) (p: Value) (e : Expr)
-  -- | mkO (H : Heap) (Γ : GTable) (S: Stack) (g: GlobName) (e : Expr)
   | crash
   deriving Inhabited
-
--- /-! ### Substitution
-
---   `this` and `param` are the only term variables and the language has no binders
---   that capture them, so substitution is ordinary structural replacement. -/
-
--- /-- `e[t/this]`. -/
--- def substThis (t : Expr) : Expr → Expr
---   | Expr.thisE        => t
---   | Expr.paramE       => Expr.paramE
---   | Expr.newC C e₁ e₂ => Expr.newC C (substThis t e₁) (substThis t e₂)
---   | Expr.app e₁ e₂    => Expr.app (substThis t e₁) (substThis t e₂)
---   | Expr.proj e i     => Expr.proj (substThis t e) i
---   | Expr.gproj G i    => Expr.gproj G i
---   | Expr.val v        => Expr.val v          -- values contain no variables
-
--- /-- `e[t/param]`. -/
--- def substParam (t : Expr) : Expr → Expr
---   | Expr.thisE        => Expr.thisE
---   | Expr.paramE       => t
---   | Expr.newC C e₁ e₂ => Expr.newC C (substParam t e₁) (substParam t e₂)
---   | Expr.app e₁ e₂    => Expr.app (substParam t e₁) (substParam t e₂)
---   | Expr.proj e i     => Expr.proj (substParam t e) i
---   | Expr.gproj G i    => Expr.gproj G i
---   | Expr.val v        => Expr.val v          -- values contain no variables
-
-
 
 /-! ### The step relation -/
 
 /-- One small step `→` on configurations.  Each computational rule fires a redex
     inside an arbitrary evaluation context `E` (this folds in E-Ctx). -/
 inductive Step (L : Program) : Config → Config → Prop where
+  | this {H : Heap} {Γ : GTable} {S: Stack} {E κ: ECtx} {t : Loc} {p : Value}:
+    S.topCall = Frame.call t p κ →
+    Step L (.mk H Γ S (E.plug Expr.thisE))
+             (.mk H Γ S (E.plug (Expr.val (Value.loc t))))
+  | param {H : Heap} {Γ : GTable} {S: Stack} {E κ: ECtx} {t : Loc} {p : Value}:
+    S.topCall = Frame.call t p κ →
+    Step L (.mk H Γ S (E.plug Expr.paramE))
+             (.mk H Γ S (E.plug (Expr.val p)))
   /-- E-Proj: `ℓ.i → vᵢ` where `H(ℓ) = C(v₁,v₂)`. -/
   | proj {H : Heap} {Γ : GTable} {S: Stack} {E : ECtx} {ℓ : Loc} {C : ClassName}
          {v₁ v₂ : Value} {i : Idx} {G : GlobName} :
@@ -206,14 +185,15 @@ inductive Step (L : Program) : Config → Config → Prop where
       Stack.TopInit S G →
       Step L (.mk H Γ S (E.plug (Expr.newC C (Expr.val v₁) (Expr.val v₂))))
              (.mk (H[ℓ ↦ ⟨C, G, v₁, v₂⟩]) Γ S (E.plug (Expr.val (Value.loc ℓ))))
-  /-- I-Push (macro step): on first access of an uninitialised `G`, run its two-/
+  /-- I-Push: on first access of an uninitialised `G`, register `G(⊥,⊥)`, push
+      an `init1` frame recording the pending second initializer and the
+      resumption `E.plug (G.i)`, and start evaluating the first initializer. -/
   | ipush {H : Heap} {Γ : GTable} {S: Stack} {E : ECtx} {G : GlobName} {i : Idx}
-          {e₁ e₂ : Expr} {H₁ : Heap} {Γ₁ : GTable} {v₁ : Value}
-          {H₂ : Heap} {Γ₂ : GTable} :
+          {e₁ e₂ : Expr} :
       Program.HasObject L G e₁ e₂ →
       Γ G = none →
      Step L (.mk H Γ S (E.plug (Expr.gproj G i)))
-            (.mk H₂ (Γ₂[G↦ ⟨none, none⟩]) (Stack.push (Frame.init1 G e₂ (E.plug (Expr.gproj G i))) S) e₁)
+            (.mk H (Γ[G↦ ⟨none, none⟩]) (Stack.push (Frame.init1 G e₂ (E.plug (Expr.gproj G i))) S) e₁)
   /-- I-Next: the first field of `G` has reduced to `v₁`; record `G(v₁,⊥)`,
       swap the top frame to `init2`, and start evaluating the pending `e₂`. -/
   | inext {H : Heap} {Γ : GTable} {S : Stack} {G : GlobName}
