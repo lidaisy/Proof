@@ -250,9 +250,10 @@ structure FixPoint (σ : Sigma) (L : Program) : Prop where
   ret_init : ∀ {G C e K}, Program.HasClass L C e →
       KJ G C σ L e K → K ⊆ σ.Ret G C
   /-- Step 2f: `GFldᵢ(G)` contains the `⇓ᴷ` of `G`'s initializers. -/
-  gfld_init : ∀ {G e₁ e₂ K₁ K₂}, Program.HasObject L G e₁ e₂ →
-      KJ0 G σ L e₁ K₁ → KJ0 G σ L e₂ K₂ →
-      K₁ ⊆ σ.GFld Idx.one G ∧ K₂ ⊆ σ.GFld Idx.two G
+  gfld_init_one : ∀ {G e₁ e₂ K₁}, Program.HasObject L G e₁ e₂ →
+      KJ0 G σ L e₁ K₁ → K₁ ⊆ σ.GFld Idx.one G
+  gfld_init_two : ∀ {G e₁ e₂ K₂}, Program.HasObject L G e₁ e₂ →
+      KJ0 G σ L e₂ K₂ → K₂ ⊆ σ.GFld Idx.two G
   /-- Step 2g: `Fldᵢ((G, D))` bounds for every reachable
       `new D(e₁, e₂) ∈ RE(G)` — the ambient `G` is the owner of the new
       `D`-object. -/

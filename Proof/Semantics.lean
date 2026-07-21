@@ -91,6 +91,15 @@ def Frame.loc : Frame → Option Loc
   | init2 _ _   => none
   | call t _ _ => t
 
+def Frame.NotCall (f : Frame) : Prop :=
+  ∀ t p κ, f ≠ Frame.call t p κ
+
+def Frame.idx (f : Frame) (h : f.NotCall) : Idx :=
+  match f with
+  | init1 _ _ _ => Idx.one
+  | init2 _ _   => Idx.two
+  | call t p κ  => absurd rfl (h t p κ)
+
 abbrev Stack := List Frame
 
 def Stack.push(f: Frame)(S: Stack) : Stack :=
@@ -117,8 +126,43 @@ def Stack.topInit : Stack → Option (Frame × Stack × Stack)
       (Stack.topInit fs).map fun (f, calls, rest) => (f, Frame.call t p κ :: calls, rest)
   | f :: fs => some (f, [], fs)
 
+/-- The init frame returned by `topInit` is never a `call` frame: it is
+    produced only by the `f :: fs => some (f, [], fs)` branch (with `f` an
+    `init1`/`init2`), and the `call` branch merely propagates it unchanged. -/
+theorem Stack.topInit_notCall {S : Stack} {i : Frame} {cfs r : Stack}
+    (h : S.topInit = some (i, cfs, r)) : i.NotCall := by
+  induction S generalizing cfs r with
+  | nil => simp [Stack.topInit] at h
+  | cons f fs ih =>
+    cases f with
+    | init1 g e k =>
+        simp only [Stack.topInit, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, -, -⟩ := h
+        intro t p κ; nofun
+    | init2 g k =>
+        simp only [Stack.topInit, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, -, -⟩ := h
+        intro t p κ; nofun
+    | call t p κ =>
+        rw [Stack.topInit] at h
+        cases hfs : Stack.topInit fs with
+        | none => rw [hfs] at h; simp at h
+        | some val =>
+            obtain ⟨f', calls, rest⟩ := val
+            rw [hfs] at h
+            simp only [Option.map, Option.some.injEq, Prod.mk.injEq] at h
+            obtain ⟨rfl, -, -⟩ := h
+            exact ih hfs
+
 def Stack.TopInit (S : Stack) (G : GlobName) : Prop :=
   ∀ i cfs r, S.topInit = some (i, cfs, r) → i.glob = G
+
+-- def Stack.topInitIdx (S : Stack) (G : GlobName) (h : Stack.TopInit S G) : Idx :=
+--   match S with
+--   | [] => none
+--   | Frame.call t p κ :: fs =>
+--       (Stack.topInit fs).map fun (f, calls, rest) => (f, Frame.call t p κ :: calls, rest)
+--   | f :: fs => some (f, [], fs)
 
 def Stack.this (S: Stack) : Option Loc :=
   match S.topCall with
