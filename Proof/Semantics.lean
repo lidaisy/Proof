@@ -154,15 +154,42 @@ theorem Stack.topInit_notCall {S : Stack} {i : Frame} {cfs r : Stack}
             obtain ⟨rfl, -, -⟩ := h
             exact ih hfs
 
+/-- The frame reported by `topCall` sits among the call frames `cfs` collected
+    by `topInit`: `topCall` is exactly the head of `cfs`.  Lets invariants that
+    reason about `topCall` (e.g. `RetInv`) borrow the per-frame facts that
+    `cfs`-quantified invariants (e.g. `ThisInv`) supply. -/
+theorem Stack.topCall_mem_topInit {S : Stack} {i : Frame} {cfs r : Stack}
+    {t : Loc} {p : Value} {κ : ECtx}
+    (hc : S.topCall = some (Frame.call t p κ))
+    (hi : S.topInit = some (i, cfs, r)) : Frame.call t p κ ∈ cfs := by
+  cases S with
+  | nil => simp [Stack.topCall] at hc
+  | cons f fs =>
+    cases f with
+    | init1 g e k => simp [Stack.topCall] at hc
+    | init2 g k => simp [Stack.topCall] at hc
+    | call t' p' κ' =>
+        simp only [Stack.topCall, Option.some.injEq, Frame.call.injEq] at hc
+        obtain ⟨rfl, rfl, rfl⟩ := hc
+        rw [Stack.topInit] at hi
+        cases hfs : Stack.topInit fs with
+        | none => rw [hfs] at hi; simp at hi
+        | some val =>
+            obtain ⟨f', calls, rest⟩ := val
+            rw [hfs] at hi
+            simp only [Option.map, Option.some.injEq, Prod.mk.injEq] at hi
+            obtain ⟨-, rfl, -⟩ := hi
+            exact List.mem_cons_self
+
 def Stack.TopInit (S : Stack) (G : GlobName) : Prop :=
   ∀ i cfs r, S.topInit = some (i, cfs, r) → i.glob = G
 
--- def Stack.topInitIdx (S : Stack) (G : GlobName) (h : Stack.TopInit S G) : Idx :=
---   match S with
---   | [] => none
---   | Frame.call t p κ :: fs =>
---       (Stack.topInit fs).map fun (f, calls, rest) => (f, Frame.call t p κ :: calls, rest)
---   | f :: fs => some (f, [], fs)
+/-- The stack has a topmost `init` frame.  Holds after every step except the
+    top-level `ipush` that first pushes an `init1` frame onto a possibly
+    init-less stack; keeps the existence of an init frame separate from the
+    `TopInit` glob-pinning predicate. -/
+def Stack.HasInit (S : Stack) : Prop :=
+  ∃ i cfs r, S.topInit = some (i, cfs, r)
 
 def Stack.this (S: Stack) : Option Loc :=
   match S.topCall with
@@ -222,10 +249,11 @@ inductive Step (L : Program) : Config → Config → Prop where
       Step L (.mk H Γ ((Frame.call t p κ)::S) v)
              (.mk H Γ S (κ.plug v))
   /-- E-NewAlloc: `new C(v₁,v₂) → ℓ` for fresh `ℓ`. -/
-  | newAlloc {H : Heap} {Γ : GTable} {S: Stack} {E : ECtx} {C : ClassName} {v₁ v₂ : Value}
-             {ℓ : Loc} {body : Expr} {G : GlobName} :
+  | newAlloc {H : Heap} {Γ : GTable} {S cfs r: Stack} {E : ECtx} {C : ClassName} {v₁ v₂ : Value}
+             {ℓ : Loc} {body : Expr} {G : GlobName} {i : Frame} :
       H ℓ = none →
       Program.HasClass L C body →
+      Stack.topInit S = some (i, cfs, r) →
       Stack.TopInit S G →
       Step L (.mk H Γ S (E.plug (Expr.newC C (Expr.val v₁) (Expr.val v₂))))
              (.mk (H[ℓ ↦ ⟨C, G, v₁, v₂⟩]) Γ S (E.plug (Expr.val (Value.loc ℓ))))
