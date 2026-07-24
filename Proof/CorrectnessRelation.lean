@@ -31,6 +31,10 @@ theorem Heap.lookup_update_ne {H : Heap} {l l₀ : Loc} {o : ClsIns}
     (h : l ≠ l₀) : H[l₀ ↦ o] l = H l := by
   simp [Heap.update, h]
 
+theorem GTable.lookup_update_ne {Γ : GTable} {G G₀ : GlobName} {o : GEntry}
+    (h : G ≠ G₀) : Γ[G₀ ↦ o] G = Γ G := by
+  simp [GTable.update, h]
+
 def Heap.opOf (H : Heap) : Value → Set OPair
   | Value.loc ℓ =>
     match H ℓ with
@@ -321,10 +325,6 @@ def GTableInv (σ : Sigma) (H : Heap) (Γ : GTable) : Prop :=
     ∀ i ℓ', o.field i = some (Value.loc ℓ') →
       ∃ c', H ℓ' = some c' ∧ (c'.g, c'.cls) ∈ σ.GFld i g
 
--- Allocatedness of the receiver `t` is *not* asserted here: it is supplied by
--- `ThisInv`, whose `cfs`-membership hypothesis is met by the `topCall` frame via
--- `Stack.topCall_mem_topInit`.  Hence the `∀ D, H t = some D → …` shape (vacuous
--- when `t` is unallocated) rather than the stronger `∃ D, H t = some D ∧ …`.
 def RetInv (σ : Sigma) (L : Program) (H : Heap) (S : Stack) (e : Expr) : Prop :=
   ∀ G i cfs r, S.topInit = some (i, cfs, r) → Stack.TopInit S G
     → ∀ t p κ, S.topCall = some (Frame.call t p κ) → ∀ D, H t = some D
@@ -505,25 +505,6 @@ theorem ArgSound.of_re {σ : Sigma} {L : Program} {G : GlobName} {H : Heap} {S :
     exact hsub₂.trans
       (hσ.param_re hre hK₁' hK₂' p.2 (mem_classes.mpr ⟨p.1, hsub₁ hp⟩))
 
-/-! ### The runtime calls bound (`Calls0R`)
-
-  The runtime shadow of `Calls0`/`rm_init`/`rm_closed`: every application
-  subterm of the focus can only call classes in `σ.RM G`.  Like `ArgSound`
-  (and for the same two reasons) it is *structural* rather than an inductive
-  `e calls K` judgment: (i) apps not yet in evaluation position must be
-  covered before reduction exposes them, and (ii) at the use site
-  (`inv_step_app`'s `RMInv` case) the bound must be *read off* at the redex —
-  an inductive judgment would additionally need a derivation for the whole
-  focus, which does not exist when an unevaluated sibling in the context has
-  `this`/`param` in function position over a stack without a top call
-  frame. -/
-
-/-- Runtime calls soundness of a focus expression (the `Calls0R` bound): for
-    every application subterm, the classes its function position may denote at
-    runtime (`KJR`) lie in `σ.RM G`.  This is what names the callee class in
-    `E-AppBeta`: at the redex `ℓ(v)` the function position's runtime K-set is
-    `{(G, cls ℓ)}`, so `cls ℓ ∈ σ.RM G` — the missing `RMInv` obligation for
-    the pushed frame. -/
 def CallSound (G : GlobName) (σ : Sigma) (L : Program) (H : Heap) (S : Stack) : Expr → Prop
   | Expr.app e₁ e₂ =>
       CallSound G σ L H S e₁ ∧ CallSound G σ L H S e₂ ∧
@@ -532,8 +513,6 @@ def CallSound (G : GlobName) (σ : Sigma) (L : Program) (H : Heap) (S : Stack) :
   | Expr.proj e _ => CallSound G σ L H S e
   | _ => True
 
-/-- `CallSound` of the focus, for the global named by the stack's topmost init
-    frame — guarded exactly like `ArgInv`. -/
 def CallInv (σ : Sigma) (L : Program) (H : Heap) (S : Stack) (e : Expr) : Prop :=
   ∀ G i cfs r, S.topInit = some (i, cfs, r) → Stack.TopInit S G →
     CallSound G σ L H S e
@@ -572,21 +551,44 @@ theorem CallSound.plug_mono {G : GlobName} {σ : Sigma} {L : Program} {H : Heap}
   | .newL _ E _, hr => ⟨CallSound.plug_mono hx h E hr.1, hr.2⟩
   | .newR _ _ E, hr => ⟨hr.1, CallSound.plug_mono hx h E hr.2⟩
 
+/-- Heap congruence of `CallSound`, built on `KJR.heap_congr` (cf.
+    `ArgSound.heap_congr`).  Only the `app` layer consults a K-set — the function
+    position `e₁` — and `heap_congr` keeps that K-set fixed across the growth. -/
 theorem CallSound.heap_congr {G : GlobName} {σ : Sigma} {L : Program} {S : Stack}
     {H H' : Heap} (hgrow : ∀ ℓ o, H ℓ = some o → H' ℓ = some o)
     (hstk : ∀ t p κ, S.topCall = some (Frame.call t p κ) →
         H.opOf (Value.loc t) = H'.opOf (Value.loc t) ∧ H.opOf p = H'.opOf p) :
-    ∀ {e : Expr}, Closed H e → CallSound G σ L H S e → CallSound G σ L H' S e :=
-    sorry
+    ∀ {e : Expr}, Closed H e → CallSound G σ L H S e → CallSound G σ L H' S e := by
+  intro e
+  induction e with
+  | thisE => intro _ _; trivial
+  | paramE => intro _ _; trivial
+  | gproj => intro _ _; trivial
+  | val => intro _ _; trivial
+  | proj e i ih => intro hcl hCS; exact ih hcl hCS
+  | app e₁ e₂ ih₁ ih₂ =>
+    intro hcl hCS
+    obtain ⟨h1, h2, h3⟩ := hCS
+    exact ⟨ih₁ hcl.1 h1, ih₂ hcl.2 h2,
+      fun K₁ hK₁ => h3 K₁ (KJR.heap_congr hgrow hstk hcl.1 hK₁)⟩
+  | newC D e₁ e₂ ih₁ ih₂ =>
+    intro hcl hCS
+    obtain ⟨h1, h2⟩ := hCS
+    exact ⟨ih₁ hcl.1 h1, ih₂ hcl.2 h2⟩
 
+/-- Two-heap plug monotonicity of `CallSound` across a growing heap, factored
+    through `CallSound.heap_congr` then the fixed-heap `CallSound.plug_mono`
+    (cf. `ArgSound.plug_mono_grow`). -/
 theorem CallSound.plug_mono_grow {G : GlobName} {σ : Sigma} {L : Program} {H H' : Heap} {S : Stack}
     {eᵣ eₓ : Expr}
-    (hx : CallSound G σ L H S eₓ) (hgrow : ∀ ℓ o, H ℓ = some o → H' ℓ = some o)
+    (hx : CallSound G σ L H' S eₓ) (hgrow : ∀ ℓ o, H ℓ = some o → H' ℓ = some o)
     (hstk : ∀ t p κ, S.topCall = some (Frame.call t p κ) →
         H.opOf (Value.loc t) = H'.opOf (Value.loc t) ∧ H.opOf p = H'.opOf p)
     (h : ∀ K, KJR G σ L H' S eₓ K → ∃ K', KJR G σ L H' S eᵣ K' ∧ K ⊆ K') :
-    ∀ (E : ECtx), CallSound G σ L H S (E.plug eᵣ) → CallSound G σ L H' S (E.plug eₓ)
-  := sorry
+    ∀ (E : ECtx), Closed H (E.plug eᵣ) →
+      CallSound G σ L H S (E.plug eᵣ) → CallSound G σ L H' S (E.plug eₓ) := by
+  intro E hcl hCS
+  exact CallSound.plug_mono hx h E (CallSound.heap_congr hgrow hstk hcl hCS)
 
 /-- `KJ0` is deterministic (needed to match the `KJ0` premise of a `Calls0`
     derivation against the one produced by `KJR.to_kjc`). -/
@@ -742,23 +744,15 @@ theorem CallSound.of_calls {G : GlobName} {C : ClassName} {σ : Sigma} {L : Prog
     exact (classes_mono hsub').trans
       ((Set.subset_union_left.trans Set.subset_union_left).trans hK)
 
-/-- RM soundness of the whole stack: in *every* suffix of `S`, the call frames
-    sitting above the suffix's topmost init frame have their receiver's class in
-    `σ.RM G` for that init frame's global `G`.  Quantifying over suffixes pairs
-    each call frame with the nearest init frame below it, so every segment of
-    the stack is constrained, not just the one above the topmost init frame. -/
 def RMInv (σ : Sigma) (H: Heap) (S : Stack) : Prop :=
   ∀ (S' : Stack) i cfs r f G l, S' <:+ S → S'.topInit = some (i, cfs, r)
   → Stack.TopInit S' G → f ∈ cfs → f.loc = some l → ∃ C, H l = some C ∧ C.cls ∈ σ.RM G
 
-/-- Runtime `This` soundness of a focus expression (the runtime shadow of
-    `this_re`, as `ArgSound` shadows `param_re` and `CallSound` shadows
-    `Calls0`): for every application subterm, each owner pair the function
-    position may denote at runtime has its owner in `σ.This`.  This is what
-    yields the runtime `This` bound for the frame pushed by `E-AppBeta`: at
-    the redex `ℓ(v)` the function position's runtime K-set is `{(G, cls ℓ)}`,
-    so `G ∈ σ.This G (cls ℓ)` — the `hthis` hypothesis of `KJR.to_kjc` for
-    the callee body. -/
+def ThisInv (σ : Sigma) (H : Heap) (S : Stack) : Prop :=
+  ∀ (S' : Stack) i cfs r t p κ G, S' <:+ S → S'.topInit = some (i, cfs, r)
+    → Stack.TopInit S' G → Frame.call t p κ ∈ cfs
+    → ∃ D, H t = some D ∧ D.g ∈ σ.This G D.cls
+
 def ThisSound (G : GlobName) (σ : Sigma) (L : Program) (H : Heap) (S : Stack) : Expr → Prop
   | Expr.app e₁ e₂ =>
       ThisSound G σ L H S e₁ ∧ ThisSound G σ L H S e₂ ∧
@@ -767,18 +761,10 @@ def ThisSound (G : GlobName) (σ : Sigma) (L : Program) (H : Heap) (S : Stack) :
   | Expr.proj e _ => ThisSound G σ L H S e
   | _ => True
 
-/-- `This` soundness of the call stack (the per-frame residue of `ThisSound`,
-    shaped like `ParamInv`): every call frame's receiver `t` is allocated, with
-    its owner inside `σ.This G C` for the receiver's class `C` and the
-    nearest init frame's global `G`.  Unlike `ParamInv`, allocatedness is free
-    here — a call frame's receiver is always an allocated object. -/
-def ThisInv (σ : Sigma) (H : Heap) (S : Stack) : Prop :=
-  ∀ (S' : Stack) i cfs r t p κ G, S' <:+ S → S'.topInit = some (i, cfs, r)
-    → Stack.TopInit S' G → Frame.call t p κ ∈ cfs
-    → ∃ D, H t = some D ∧ D.g ∈ σ.This G D.cls
+def ThisSoundInv (σ : Sigma) (L : Program) (H : Heap) (S : Stack) (e : Expr) : Prop :=
+  ∀ G i cfs r, S.topInit = some (i, cfs, r) → Stack.TopInit S G →
+    ThisSound G σ L H S e
 
-/-- `ThisSound` restricts to the expression sitting in the hole of an
-    evaluation context. -/
 theorem ThisSound.of_plug {G : GlobName} {σ : Sigma} {L : Program} {H : Heap} {S : Stack} :
     ∀ (E : ECtx) {e : Expr}, ThisSound G σ L H S (E.plug e) → ThisSound G σ L H S e
   | .hole, _, h => h
@@ -805,14 +791,44 @@ theorem ThisSound.plug_mono {G : GlobName} {σ : Sigma} {L : Program} {H : Heap}
   | .newL _ E _, hr => ⟨ThisSound.plug_mono hx h E hr.1, hr.2⟩
   | .newR _ _ E, hr => ⟨hr.1, ThisSound.plug_mono hx h E hr.2⟩
 
+/-- Heap congruence of `ThisSound`, built on `KJR.heap_congr` (cf.
+    `ArgSound.heap_congr`).  Only the `app` layer consults the function
+    position's K-set, which `heap_congr` keeps fixed across the growth. -/
+theorem ThisSound.heap_congr {G : GlobName} {σ : Sigma} {L : Program} {S : Stack}
+    {H H' : Heap} (hgrow : ∀ ℓ o, H ℓ = some o → H' ℓ = some o)
+    (hstk : ∀ t p κ, S.topCall = some (Frame.call t p κ) →
+        H.opOf (Value.loc t) = H'.opOf (Value.loc t) ∧ H.opOf p = H'.opOf p) :
+    ∀ {e : Expr}, Closed H e → ThisSound G σ L H S e → ThisSound G σ L H' S e := by
+  intro e
+  induction e with
+  | thisE => intro _ _; trivial
+  | paramE => intro _ _; trivial
+  | gproj => intro _ _; trivial
+  | val => intro _ _; trivial
+  | proj e i ih => intro hcl hTS; exact ih hcl hTS
+  | app e₁ e₂ ih₁ ih₂ =>
+    intro hcl hTS
+    obtain ⟨h1, h2, h3⟩ := hTS
+    exact ⟨ih₁ hcl.1 h1, ih₂ hcl.2 h2,
+      fun K₁ hK₁ p hp => h3 K₁ (KJR.heap_congr hgrow hstk hcl.1 hK₁) p hp⟩
+  | newC D e₁ e₂ ih₁ ih₂ =>
+    intro hcl hTS
+    obtain ⟨h1, h2⟩ := hTS
+    exact ⟨ih₁ hcl.1 h1, ih₂ hcl.2 h2⟩
+
+/-- Two-heap plug monotonicity of `ThisSound` across a growing heap, factored
+    through `ThisSound.heap_congr` then the fixed-heap `ThisSound.plug_mono`
+    (cf. `ArgSound.plug_mono_grow`). -/
 theorem ThisSound.plug_mono_grow {G : GlobName} {σ : Sigma} {L : Program} {H H' : Heap} {S : Stack}
     {eᵣ eₓ : Expr}
-    (hx : CallSound G σ L H S eₓ) (hgrow : ∀ ℓ o, H ℓ = some o → H' ℓ = some o)
+    (hx : ThisSound G σ L H' S eₓ) (hgrow : ∀ ℓ o, H ℓ = some o → H' ℓ = some o)
     (hstk : ∀ t p κ, S.topCall = some (Frame.call t p κ) →
         H.opOf (Value.loc t) = H'.opOf (Value.loc t) ∧ H.opOf p = H'.opOf p)
     (h : ∀ K, KJR G σ L H' S eₓ K → ∃ K', KJR G σ L H' S eᵣ K' ∧ K ⊆ K') :
-    ∀ (E : ECtx), ThisSound G σ L H S (E.plug eᵣ) → ThisSound G σ L H' S (E.plug eₓ)
-  := sorry
+    ∀ (E : ECtx), Closed H (E.plug eᵣ) →
+      ThisSound G σ L H S (E.plug eᵣ) → ThisSound G σ L H' S (E.plug eₓ) := by
+  intro E hcl hTS
+  exact ThisSound.plug_mono hx h E (ThisSound.heap_congr hgrow hstk hcl hTS)
 
 /-- Reachable code is `ThisSound`: each application subterm is reachable,
     `KJR.to_kjc` covers its function position's runtime K-set by the static
@@ -845,18 +861,7 @@ theorem ThisSound.of_re {σ : Sigma} {L : Program} {G : GlobName} {H : Heap} {S 
     exact hσ.this_re hre hK₁' rfl p.2 (mem_classes.mpr ⟨p.1, hsub₁ hp⟩)
       ⟨p, hsub₁ hp, rfl⟩
 
-/-- `ThisSound` of the focus, guarded exactly like `ArgInv`/`CallInv`. -/
-def ThisSoundInv (σ : Sigma) (L : Program) (H : Heap) (S : Stack) (e : Expr) : Prop :=
-  ∀ G i cfs r, S.topInit = some (i, cfs, r) → Stack.TopInit S G →
-    ThisSound G σ L H S e
-
-/-- Init-frame analogue of `RetInv`.  `RetInv` bounds the focus's K-sets by
-    `σ.Ret` exactly when a method is executing (`S.topCall = some (call …)`);
-    `GInitInv` bounds them by `σ.GFld` in the dual situation — when the topmost
-    init frame sits directly on top, with *no* call frames above it (`cfs = []`),
-    so the focus is the residual field initializer itself rather than method-body
-    code.  Under a pushed call frame the `[]` guard is unsatisfiable, so the
-    focus being a callee body (bounded by `Ret`, not `GFld`) is no obstruction. -/
+/-- Init-frame analogue of `RetInv`. -/
 def GInitInv (σ : Sigma) (L : Program) (H : Heap) (S : Stack) (e : Expr) : Prop :=
   ∀ G ifr r (hti : S.topInit = some (ifr, [], r)), Stack.TopInit S G →
     ∀ i, Frame.idx ifr (Stack.topInit_notCall hti) = i
@@ -871,7 +876,7 @@ def GInitInv (σ : Sigma) (L : Program) (H : Heap) (S : Stack) (e : Expr) : Prop
     resumed focus `E[v]` when a method call inside an initializer returns. -/
 def FrameInv (σ : Sigma) (L : Program) (H : Heap) (S : Stack) : Prop :=
   ∀ (S': Stack) t p E, (Frame.call t p E) :: S' <:+ S →
-    ∀ G i cfs r, (hS'ti : S'.topInit = some (i, cfs, r)) → Stack.TopInit S' G →
+    ∀ G i cfs r, S'.topInit = some (i, cfs, r) → Stack.TopInit S' G →
       let redex := Expr.app (Expr.val (Value.loc t)) (Expr.val p)
       (∀ t' p' κ', S'.topCall = some (Frame.call t' p' κ') →
         ∀ D', H t' = some D' →
@@ -910,6 +915,20 @@ def FrameClosedInv (H : Heap) (S : Stack) : Prop :=
   ∀ (S' : Stack) t p E, (Frame.call t p E) :: S' <:+ S →
     Closed H (E.plug (Expr.app (Expr.val (Value.loc t)) (Expr.val p)))
 
+/-- Init-frame dual of `FrameClosedInv`: every continuation `k` stored in an init
+    frame — `init1 G e k` or `init2 G k` — is `Closed` over the current heap.
+    Like `FrameClosedInv` this carries no init guard: closedness of the resumed
+    focus `k` is required at every `I-Pop`.  It is seeded at `I-Push` from the
+    pre-state focus's own closedness (`k` there being the resumption `E[G.i]`),
+    carried across `I-Next`, consumed at `I-Pop`, and — at `E-NewAlloc` — lifted
+    across the heap growth by `Closed.mono`.  This is precisely the ingredient
+    that lets `KJR.heap_congr` transport a stored continuation's K-set back across
+    the freshly grown heap (`InitFrameInv` in `inv_step_alloc`). -/
+def InitFrameClosedInv (H : Heap) (S : Stack) : Prop :=
+  ∀ (S' : Stack) G k,
+    ((∃ e, Frame.init1 G e k :: S' <:+ S) ∨ Frame.init2 G k :: S' <:+ S)
+      → Closed H k
+
 /-! ### The subject-reduction invariant -/
 
 /-- The subject-reduction invariant `Inv σ L G` on configurations.  For a focus
@@ -938,12 +957,13 @@ def Inv (σ : Sigma) (L : Program) : Config → Prop
     ∧ InitFrameInv σ L H S
     ∧ Closed H e
     ∧ FrameClosedInv H S
+    ∧ InitFrameClosedInv H S
   | .crash => True
 
 theorem inv_empty {σ : Sigma} {e : Expr} {L : Program} {G : GlobName} {i : Idx}
     (_hσ : FixPoint σ L) (hsel: e = Expr.gproj G i) :
     Inv σ L (.mk (fun _ => none) (fun _ => none) List.nil e) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- ParamInv: no receiver is allocated in the empty heap.
     intro S' i cfs r t p κ G C _ _ _ _ hHt
     simp at hHt
@@ -988,13 +1008,16 @@ theorem inv_empty {σ : Sigma} {e : Expr} {L : Program} {G : GlobName} {i : Idx}
   · -- FrameClosedInv: the empty stack has no call frame.
     intro S' t p E hsub
     simp [List.suffix_nil] at hsub
+  · -- InitFrameClosedInv: the empty stack has no init frame.
+    intro S' G k hmem
+    rcases hmem with ⟨e, hs⟩ | hs <;> simp [List.suffix_nil] at hs
 
 theorem inv_step_proj {σ : Sigma} {G G₀ : GlobName} {L : Program} {H : Heap} {Γ : GTable} {S : Stack} {E : ECtx}
     {ℓ : Loc} {C : ClassName} {v₁ v₂ : Value} {i : Idx} {c : ClsIns} {o : GEntry}
     (_hG : Stack.TopInit S G) (hHasInit : Stack.HasInit S) (hG₀ : Γ G₀ = some o) (hC : c = (.mk C G₀ v₁ v₂)) (hHl : H ℓ = some c) (_hσ : FixPoint σ L)
     (hinv : Inv σ L (.mk H Γ S (E.plug (Expr.proj (Expr.val (Value.loc ℓ)) i)))) :
     Inv σ L (.mk H Γ S (E.plug (Expr.val (c.field i)))) := by
-  obtain ⟨hparam, hfld, hgtable, hret, harg, hcall, hrm, hthisinv, hts, hframe, hgi, hinit, hc, hfclosed⟩ := hinv
+  obtain ⟨hparam, hfld, hgtable, hret, harg, hcall, hrm, hthisinv, hts, hframe, hgi, hinit, hc, hfclosed, hclosedinit⟩ := hinv
   subst hC
   -- Covering of the contractum's runtime K-sets by the redex's, for any
   -- ambient global `G'`: `H.opOf vᵢ ⊆ σ.Fld i G C` is exactly `FldInv` at `ℓ`.
@@ -1023,7 +1046,7 @@ theorem inv_step_proj {σ : Sigma} {G G₀ : GlobName} {L : Program} {H : Heap} 
   -- `H`/`Γ`/`S` are untouched by E-Proj, so the five stack/heap bounds carry
   -- over verbatim; only `RetInv`, `ArgInv`, `CallInv` and `ThisSoundInv`,
   -- which mention the focus, change.
-  refine ⟨hparam, hfld, hgtable, ?_, ?_, ?_, hrm, hthisinv, ?_, hframe, ?_, hinit, ?_, hfclosed⟩
+  refine ⟨hparam, hfld, hgtable, ?_, ?_, ?_, hrm, hthisinv, ?_, hframe, ?_, hinit, ?_, hfclosed, hclosedinit⟩
   · -- RetInv: Proved using hP and KJR.plug_mono
     intro G' i' cfs' r' hti' htiG' t p κ htc D hHt K hK
     obtain ⟨K', hK', hsub⟩ := KJR.plug_mono (hP G') E K hK
@@ -1064,7 +1087,7 @@ theorem inv_step_gproj {σ : Sigma} {G₁ : GlobName} {L : Program}
     (hG₁ : Γ G₁ = some g) (hvi : g.field i = some v) (hHasInit : Stack.HasInit S) (_hσ : FixPoint σ L)
     (hinv : Inv σ L (.mk H Γ S (E.plug (Expr.gproj G₁ i)))) :
     Inv σ L (.mk H Γ S (E.plug (Expr.val v))) := by
-    obtain ⟨hparam, hfld, hgtable, hret, harg, hcall, hrm, hthisinv, hts, hframe, hgi, hinit, hc, hfclosed⟩ := hinv
+    obtain ⟨hparam, hfld, hgtable, hret, harg, hcall, hrm, hthisinv, hts, hframe, hgi, hinit, hc, hfclosed, hclosedinit⟩ := hinv
     -- Covering of the contractum's runtime K-sets by the redex's, for any
     -- ambient global `G'`: `H.opOf v ⊆ σ.GFld i G₁` is exactly `GTableInv`.
     have hP : ∀ (G' : GlobName) K, KJR G' σ L H S (Expr.val v) K →
@@ -1089,7 +1112,7 @@ theorem inv_step_gproj {σ : Sigma} {G₁ : GlobName} {L : Program}
     -- `H`/`Γ`/`S` are untouched by E-GProj, so the five stack/heap bounds carry
     -- over verbatim; only `RetInv`, `ArgInv`, `CallInv` and `ThisSoundInv`,
     -- which mention the focus, change.
-    refine ⟨hparam, hfld, hgtable, ?_, ?_, ?_, hrm, hthisinv, ?_, hframe, ?_, hinit, ?_, hfclosed⟩
+    refine ⟨hparam, hfld, hgtable, ?_, ?_, ?_, hrm, hthisinv, ?_, hframe, ?_, hinit, ?_, hfclosed, hclosedinit⟩
     · -- RetInv: Using hP (G.i is inside original K) and KJR.plug_mono for plug
       intro G' i' cfs' r' hti' htiG' t p κ htc D hHt K hK
       obtain ⟨K', hK', hsub⟩ := KJR.plug_mono (hP G') E K hK
@@ -1129,7 +1152,7 @@ theorem inv_step_app {σ : Sigma} {L : Program} {G  : GlobName}
     (hbody : Program.HasClass L C eₐ) (hbvf : ValueFree eₐ)
     (hinv : Inv σ L (.mk H Γ S (E.plug (Expr.app (Expr.val (Value.loc l)) (Expr.val v))))) :
     Inv σ L (.mk H Γ (Stack.push (Frame.call l v E) S) eₐ) := by
-    obtain ⟨hparam, hfld, hgtable, hret, harg, hcall, hrm, hthisinv, hts, hframe, hgi, hinit, hc, hfclosed⟩ := hinv
+    obtain ⟨hparam, hfld, hgtable, hret, harg, hcall, hrm, hthisinv, hts, hframe, hgi, hinit, hc, hfclosed, hclosedinit⟩ := hinv
     -- The fresh frame's bounds, read off the focus invariants at the redex
     -- (the function position's runtime K-set is `{(G, C)}` via `hHl`):
     -- `ThisSound` gives the runtime `This` bound, `ArgSound` the argument
@@ -1191,7 +1214,7 @@ theorem inv_step_app {σ : Sigma} {L : Program} {G  : GlobName}
           ((htiG' i₀ (Frame.call l v E :: cfs₀) r₀
               (by simp [Stack.push, Stack.topInit, htopS])).symm.trans
             (hG i₀ cfs₀ r₀ htopS))⟩
-    refine ⟨?_, hfld, hgtable, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, hfld, hgtable, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ParamInv: only the freshly pushed frame is new; its argument bound
       -- `H.opOf v ⊆ σ.Param G C` is `ArgInv` at the redex (`KJR.val` gives the
       -- function position the runtime K-set `{(G, C)}` via `hHl`).
@@ -1416,6 +1439,18 @@ theorem inv_step_app {σ : Sigma} {L : Program} {G  : GlobName}
         subst ht; subst hp; subst hE'
         exact hc
       · exact hfclosed S' t p E' hsub'
+    · -- InitFrameClosedInv: the freshly pushed `Frame.call` is not an init frame,
+      -- so every init frame of the new stack sits inside `S`; the constructor-clash
+      -- head case is impossible and the tail reroutes through `hclosedinit`.
+      intro S' G' k hsub
+      apply hclosedinit S' G' k
+      rcases hsub with ⟨e, h⟩ | h
+      · rcases List.suffix_cons_iff.mp h with heq | hsub'
+        · simp at heq
+        · exact Or.inl ⟨e, hsub'⟩
+      · rcases List.suffix_cons_iff.mp h with heq | hsub'
+        · simp at heq
+        · exact Or.inr hsub'
 
 theorem inv_step_ret {σ : Sigma} {L : Program} {G Gₒ : GlobName}
     {H : Heap} {Γ : GTable} {S : Stack} {E : ECtx} {eₐ : Expr} {l : Loc} {v v₁ v₂ p : Value}
@@ -1423,7 +1458,7 @@ theorem inv_step_ret {σ : Sigma} {L : Program} {G Gₒ : GlobName}
     (_hbody : Program.HasClass L C eₐ) (_hbvf : ValueFree eₐ)
     (hinv : Inv σ L (.mk H Γ ((Frame.call l p E)::S) (Expr.val v))) :
     Inv σ L (.mk H Γ S (E.plug (Expr.val v))) := by
-    obtain ⟨hparam, hfld, hgtable, hret, -, -, hrm, hthisinv, -, hframe, hgi, hinit, hc, hfclosed⟩ := hinv
+    obtain ⟨hparam, hfld, hgtable, hret, -, -, hrm, hthisinv, -, hframe, hgi, hinit, hc, hfclosed, hclosedinit⟩ := hinv
     -- Covering, shared by the Ret/Arg/Call/ThisSound cases below: under `S`'s
     -- topInit guard, every K-set of the returned value lies inside a K-set of
     -- the popped frame's redex `l(p)`.  The bound `H.opOf v ⊆ σ.Ret G' C` is
@@ -1453,7 +1488,7 @@ theorem inv_step_ret {σ : Sigma} {L : Program} {G Gₒ : GlobName}
       intro K hK
       cases hK
       exact ⟨_, KJR.app KJR.val, fun x hx => Set.mem_biUnion hmem (hval hx)⟩
-    refine ⟨?_, hfld, hgtable, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, hfld, hgtable, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ParamInv
       intro S' i cfs r t p κ G' C' hsub hti htiG' hfc htc' l hpl
       exact hparam S' i cfs r t p κ G' C' (hsub.trans (List.suffix_cons _ _)) hti htiG' hfc htc' l hpl
@@ -1526,13 +1561,20 @@ theorem inv_step_ret {σ : Sigma} {L : Program} {G Gₒ : GlobName}
       -- call frame of the pre-state stack; reroute through `hfclosed`.
       intro S' t' p' E₁ hsub
       exact hfclosed S' t' p' E₁ (hsub.trans (List.suffix_cons _ _))
+    · -- InitFrameClosedInv: dually, every init frame of `S` is an init frame of
+      -- the pre-state stack; reroute through `hclosedinit`.
+      intro S' G' k hsub
+      apply hclosedinit S' G' k
+      rcases hsub with ⟨e, h⟩ | h
+      · exact Or.inl ⟨e, h.trans (List.suffix_cons _ _)⟩
+      · exact Or.inr (h.trans (List.suffix_cons _ _))
 
 theorem inv_step_alloc {σ : Sigma} {e₁ e₂ eₐ : Expr} {G : GlobName} {L : Program} {v₁ v₂ : Value}
     {H : Heap} {Γ : GTable} {S : Stack} {E : ECtx} {i : Idx} {l : Loc} {C: ClassName}
     (htG : Stack.TopInit S G) (hHasInit : Stack.HasInit S) (_hσ : FixPoint σ L) (hG : (Γ G).isSome)
     (hHl : H l = none) (_hbody : Program.HasClass L C eₐ) (hinv : Inv σ L (.mk H Γ S (E.plug (Expr.newC C v₁ v₂))))
     : Inv σ L (.mk (Heap.update H l (ClsIns.mk C G v₁ v₂)) Γ S (E.plug (Expr.val (Value.loc l)))) := by
-    obtain ⟨hparam, hfld, hgtable, hret, harg, hci, hrm, hthisinv, hts, hframe, hgi, hinit, hc, hfclosed⟩ := hinv
+    obtain ⟨hparam, hfld, hgtable, hret, harg, hci, hrm, hthisinv, hts, hframe, hgi, hinit, hc, hfclosed, hclosedinit⟩ := hinv
     -- The allocation only grows the heap at the fresh `l`, which is distinct
     -- from every location already bound.
     have hgrow : ∀ ℓ o, H ℓ = some o →
@@ -1564,7 +1606,7 @@ theorem inv_step_alloc {σ : Sigma} {e₁ e₂ eₐ : Expr} {G : GlobName} {L : 
           simp only [Heap.opOf, hpe]
         | btrue => rfl
         | bfalse => rfl
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ParamInv
       intro S' i' cfs r t p κ G' C' hsub hti htiG' hfc hHt ℓ hpℓ
       obtain ⟨Ct, hHt₀, -⟩ :=
@@ -1694,7 +1736,7 @@ theorem inv_step_alloc {σ : Sigma} {e₁ e₂ eₐ : Expr} {G : GlobName} {L : 
       have hcsr := hci G' i cfs r hti htiG'
       have hGG' : G = G' :=
         Option.some.inj ((htG i cfs r hti).symm.trans (htiG' i cfs r hti))
-      refine CallSound.plug_mono_grow (eₓ := Expr.val (Value.loc l)) trivial hgrow hstk ?_ E hcsr
+      refine CallSound.plug_mono_grow (eₓ := Expr.val (Value.loc l)) trivial hgrow hstk ?_ E hc hcsr
       intro K hK
       cases hK
       refine ⟨{(G', C)}, .newC, ?_⟩
@@ -1722,18 +1764,61 @@ theorem inv_step_alloc {σ : Sigma} {e₁ e₂ eₐ : Expr} {G : GlobName} {L : 
       have htsr := hts G' i cfs r hti htiG'
       have hGG' : G = G' :=
         Option.some.inj ((htG i cfs r hti).symm.trans (htiG' i cfs r hti))
-      refine ThisSound.plug_mono_grow (eₓ := Expr.val (Value.loc l)) trivial hgrow hstk ?_ E htsr
+      refine ThisSound.plug_mono_grow (eₓ := Expr.val (Value.loc l)) trivial hgrow hstk ?_ E hc htsr
       intro K hK
       cases hK
       refine ⟨{(G', C)}, .newC, ?_⟩
       subst hGG'
       simp [Heap.opOf, Heap.update]
     · -- FrameInv
+      intro S' t p E hsub G' i cfs r hS'ti hS'tiG' redex
+      -- refine ⟨?_, ?_, ?_, ?_, ?_⟩
+      -- · intro t' p' k' hS'tc D' hD' K hK
       sorry
-    · sorry
-    · sorry
-    · sorry
-    · sorry
+
+    · -- GInitInv
+      intro G' ifr r hti htiG' j hj K hK
+      have hGG' : G = G' :=
+        Option.some.inj ((htG ifr (cfs := []) r hti).symm.trans (htiG' ifr (cfs := []) r hti))
+      subst hGG'
+      have hK' : ∃ K', KJR G σ L H S (E.plug (Expr.newC C (Expr.val v₁) (Expr.val v₂))) K' ∧ K ⊆ K' := by
+        refine KJR.plug_mono_grow hgrow (eₓ := Expr.val (Value.loc l)) ?_ E K hc hK
+        intro K₁ hK₁
+        cases hK₁
+        refine ⟨{(G, C)}, .newC, ?_⟩
+        simp [Heap.opOf, Heap.update]
+      obtain ⟨K', hK'⟩ := hK'
+      exact hK'.2.trans (hgi G ifr r hti htiG' j hj K' hK'.1)
+    · -- InitFrameInv: the stack `S` is unchanged; only the heap grew at the
+      -- fresh `l`.  Each stored init continuation `k` is closed over the old heap
+      -- (`hclosedinit`), so `KJR.heap_congr` transports the given new-heap K-set
+      -- of `k` back to the old heap — the `cfs = []` guard forces
+      -- `S'.topCall = none`, so the stack-agreement hypothesis is vacuous — where
+      -- the pre-state `hinit` supplies the `σ.GFld` bound.
+      intro S' G' k hsub G₁ ifr r hti htiG₁ j hj K hK
+      have hstk' : ∀ t p κ, S'.topCall = some (Frame.call t p κ) →
+          H.opOf (Value.loc t) = (H[l ↦ ClsIns.mk C G v₁ v₂]).opOf (Value.loc t)
+            ∧ H.opOf p = (H[l ↦ ClsIns.mk C G v₁ v₂]).opOf p := by
+        intro t p κ htc
+        exact absurd (Stack.topCall_mem_topInit htc hti) (by simp)
+      have hK' : KJR G₁ σ L H S' k K :=
+        KJR.heap_congr hgrow hstk' (hclosedinit S' G' k hsub) hK
+      exact hinit S' G' k hsub G₁ ifr r hti htiG₁ j hj K hK'
+    · -- Closed
+      have hcr : Closed H[l ↦ { cls := C, g := G, f₁ := v₁, f₂ := v₂ }]
+        (E.plug (Expr.newC C (Expr.val v₁) (Expr.val v₂))) := Closed.mono hgrow hc
+      refine Closed.plug_mono (eₓ := Expr.val (Value.loc l)) (eᵣ := Expr.newC C (Expr.val v₁) (Expr.val v₂)) ?_ E hcr
+      show (H[l ↦ { cls := C, g := G, f₁ := v₁, f₂ := v₂ }] l).isSome
+      rw [Heap.update]
+      simp
+    · -- FrameClosedInv: heap growth preserves closedness of every stored call
+      -- continuation (`Closed.mono` along `hgrow`); the stack `S` is unchanged.
+      intro S' t p E hsub
+      exact Closed.mono hgrow (hfclosed S' t p E hsub)
+    · -- InitFrameClosedInv: heap growth preserves closedness of every stored init
+      -- continuation (`Closed.mono` along `hgrow`).
+      intro S' G' k hsub
+      exact Closed.mono hgrow (hclosedinit S' G' k hsub)
 
 theorem inv_step_ipush {σ : Sigma} {e₁ e₂ : Expr} {G : GlobName} {L : Program}
     {H : Heap} {Γ : GTable} {S : Stack} {E : ECtx} {i : Idx} (hnewG : Γ G = none) (hσ : FixPoint σ L)
@@ -1741,13 +1826,13 @@ theorem inv_step_ipush {σ : Sigma} {e₁ e₂ : Expr} {G : GlobName} {L : Progr
     (hpf₁ : ContextFree e₁) (hvf₁ : ValueFree e₁) (hpf₂ : ContextFree e₂)
     (hinv : Inv σ L (.mk H Γ S (E.plug (Expr.gproj G i))))
     : Inv σ L (.mk H Γ[G↦ ⟨none, none⟩] ((Frame.init1 G e₂ (E.plug (Expr.gproj G i))) :: S) e₁) := by
-    obtain ⟨hparam, hfld, hgtable, hret, -, -, hrm, hthisinv, -, hframe, hgi, hinit, -⟩ := hinv
+    obtain ⟨hparam, hfld, hgtable, hret, -, -, hrm, hthisinv, -, hframe, hgi, hinit, hc, hfclosed, hifclosed⟩ := hinv
     have hpin : ∀ {G₀ : GlobName},
         Stack.TopInit ((Frame.init1 G e₂ (E.plug (Expr.gproj G i))) :: S) G₀ → G = G₀ := by
       intro G₀ hTop
       have hgl := hTop (Frame.init1 G e₂ (E.plug (Expr.gproj G i))) List.nil S (by simp [Stack.topInit])
       simpa [Frame.glob] using hgl
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, sorry⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ParamInv: rcases htop rfl tells us there are no call frames above the new init frame, so vacuous
       intro S' i cfs r t p κ G₁ C hsub htop hTopG hcall hHt
       rcases List.suffix_cons_iff.mp hsub with rfl | hsub
@@ -1859,6 +1944,28 @@ theorem inv_step_ipush {σ : Sigma} {e₁ e₂ : Expr} {G : GlobName} {L : Progr
         rcases List.suffix_cons_iff.mp h with heq | h'
         · exact absurd heq (by simp)
         · exact hinit S' G' k (Or.inr h')
+    · -- Closed
+      exact Closed.of_valueFree e₁ hvf₁
+    · -- FrameClosedInv
+      intro S' t p E' hsub
+      rcases List.suffix_cons_iff.mp hsub with heq | hsub'
+      · -- the head would have to be the pushed `init1` frame — constructor clash.
+        exact absurd heq (by simp)
+      · exact hfclosed S' t p E' hsub'
+    · -- InitFrameClosedInv
+      intro S' G' k hsub
+      rcases hsub with ⟨e, h1⟩ | h2
+      · rcases List.suffix_cons_iff.mp h1 with heq | hsub'
+        · -- the pushed head: `k = E.plug (gproj G i)` is the pre-state focus,
+          -- whose closedness is `hc` (heap unchanged).
+          injection heq with hh hS
+          injection hh with hg he hk
+          rw [hk]
+          exact hc
+        · exact hifclosed S' G' k (Or.inl ⟨e, hsub'⟩)
+      · rcases List.suffix_cons_iff.mp h2 with heq | hsub'
+        · exact absurd heq (by simp)
+        · exact hifclosed S' G' k (Or.inr hsub')
 
 theorem inv_step_inext {σ : Sigma} {e₁ e₂ : Expr} {G : GlobName} {L : Program} {v : Value}
     {H : Heap} {Γ : GTable} {S : Stack} {E : ECtx} {i : Idx} (hnewG : Γ G = some ⟨none, none⟩) (hσ : FixPoint σ L)
@@ -1867,13 +1974,13 @@ theorem inv_step_inext {σ : Sigma} {e₁ e₂ : Expr} {G : GlobName} {L : Progr
     (hHasInit : Stack.HasInit ((Frame.init1 G e₂ (E.plug (Expr.gproj G i))) :: S))
     (hinv : Inv σ L (.mk H Γ ((Frame.init1 G e₂ (E.plug (Expr.gproj G i))) :: S) (Expr.val v)))
     : Inv σ L (.mk H Γ[G↦ ⟨v, none⟩] ((Frame.init2 G (E.plug (Expr.gproj G i))) :: S) e₂) := by
-    obtain ⟨hparam, hfld, hgtable, hret, -, -, hrm, hthisinv, -, hframe, hgi, hinit, -⟩ := hinv
+    obtain ⟨hparam, hfld, hgtable, hret, -, -, hrm, hthisinv, -, hframe, hgi, hinit, hc, hfclosed, hifclosed⟩ := hinv
     have hpin : ∀ {G₀ : GlobName},
         Stack.TopInit ((Frame.init2 G (E.plug (Expr.gproj G i))) :: S) G₀ → G = G₀ := by
       intro G₀ hTop
       have hgl := hTop (Frame.init2 G (E.plug (Expr.gproj G i))) List.nil S (by simp [Stack.topInit])
       simpa [Frame.glob] using hgl
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, sorry⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ParamInv
       intro S' i cfs r t p κ G₁ C hsub htop hTopG hcall hHt
       rcases List.suffix_cons_iff.mp hsub with rfl | hsub
@@ -1921,10 +2028,7 @@ theorem inv_step_inext {σ : Sigma} {e₁ e₂ : Expr} {G : GlobName} {L : Progr
           | some c' =>
             exact ⟨c', rfl, hbound (by simp [Heap.opOf, hHℓ'])⟩
           | none =>
-            -- `v = loc ℓ'` dangles (`H ℓ' = none`): ruled out for reachable
-            -- configs, but `Inv` carries no closedness component yet (cf. the
-            -- `FldInv`/`RetInv` sorries in `inv_step_alloc`).
-            sorry
+            simp [Closed, hHℓ'] at hc
         | two => simp [GEntry.field] at hj
       · have hΓ : Γ g = some o := by
           simpa [GTable.update, hEq] using HGo
@@ -2024,45 +2128,94 @@ theorem inv_step_inext {σ : Sigma} {e₁ e₂ : Expr} {G : GlobName} {L : Progr
           exact hinit S G (E.plug (Expr.gproj G i))
             (Or.inl ⟨e₂, List.suffix_refl _⟩)
         · exact hinit S' G' k (Or.inr (h'.trans (List.suffix_cons _ _)))
+    · -- Closed
+      exact Closed.of_valueFree e₂ hvf₂
+    · -- FrameClosedInv
+      intro S' t p E' hsub
+      rcases List.suffix_cons_iff.mp hsub with heq | hsub'
+      · -- the head would have to be the pushed `init1` frame — constructor clash.
+        exact absurd heq (by simp)
+      · exact hfclosed S' t p E' (hsub'.trans (List.suffix_cons _ _))
+    · -- InitFrameClosedInv
+      intro S' G' k hsub
+      rcases hsub with ⟨e, h1⟩ | h2
+      · rcases List.suffix_cons_iff.mp h1 with heq | hsub'
+        · exact absurd heq (by simp)
+        · exact hifclosed S' G' k (Or.inl ⟨e, (hsub'.trans (List.suffix_cons _ _))⟩)
+      · rcases List.suffix_cons_iff.mp h2 with heq | hsub'
+        · -- the pushed `init2 G κ` head: `k = κ = E.plug (gproj G i)`.  Its
+          -- closedness is carried by the pre-state's own `init1 G e₂ κ` frame
+          -- (`hifclosed`), not the pre-state focus `val v`.
+          injection heq with hh hS
+          injection hh with hg hk
+          rw [hk]
+          exact hifclosed S G (E.plug (Expr.gproj G i)) (Or.inl ⟨e₂, List.suffix_refl _⟩)
+        · exact hifclosed S' G' k (Or.inr (hsub'.trans (List.suffix_cons _ _)))
+
 
 theorem inv_step_ipop {σ : Sigma} {e₁ e₂ : Expr} {G : GlobName} {L : Program} {v₁ v₂ : Value}
     {H : Heap} {Γ : GTable} {S : Stack} {E : ECtx} {i : Idx} (hnewG : Γ G = some ⟨v₁, none⟩) (_hσ : FixPoint σ L)
     (hG : Program.HasObject L G e₁ e₂) (hHasInit : Stack.HasInit ((Frame.init2 G (E.plug (Expr.gproj G i))) :: S))
-    (hinv : Inv σ L (.mk H Γ ((Frame.init2 G (E.plug (Expr.gproj G i))) :: S) e₂))
+    (hinv : Inv σ L (.mk H Γ ((Frame.init2 G (E.plug (Expr.gproj G i))) :: S) (Expr.val v₂)))
     : Inv σ L (.mk H Γ[G↦ ⟨v₁, v₂⟩] S (E.plug (Expr.gproj G i))) := by
-    obtain ⟨hparam, hfld, hgtable, hret, -, -, hrm, hthisinv, -, hframe, hgi, hinit, -⟩ := hinv
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, sorry⟩
+    obtain ⟨hparam, hfld, hgtable, hret, -, -, hrm, hthisinv, -, hframe, hgi, hinit, hc, hfclosed, hifclosed⟩ := hinv
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ParamInv
       intro S' i cfs r t p κ G₁ C hsub htop hTopG hcall hHt
       exact hparam S' i cfs r t p κ G₁ C (hsub.trans (List.suffix_cons _ _)) htop hTopG hcall hHt
-    · -- FldInv
+    · -- FldInv: the heap is unchanged, so the field-typing half is exactly the
+      -- old `hfld`.  The GTable only overwrites the key `G` (with `⟨v₁, v₂⟩`),
+      -- so `(Γ[G↦…] G₁).isSome` holds regardless of whether `G₁ = G`: if
+      -- `G₁ ≠ G` the entry is untouched, and if `G₁ = G` the update itself
+      -- makes it `some`.
       intro G₁ l C v₁ v₂ hHl
-      refine ⟨?_, ?_⟩
-      · -- Owner `G₁` is initialized in `Γ[G ↦ (v₁, v₂)]`.  Here `G` becomes
-        -- *fully* initialized, so this strengthens the old `hfld.1`; still needs
-        -- the "no object owned by an under-initialized global" invariant.
-        sorry
-      · -- Fields: heap unchanged and `σ.Fld` is table-independent.
-        exact (hfld G₁ l C v₁ v₂ hHl).2
-    · -- GTableInv
-      intro g o HGo i ℓ' hi
+      obtain ⟨hsome, hfield⟩ := hfld G₁ l C v₁ v₂ hHl
+      refine ⟨?_, hfield⟩
+      by_cases hEq : G₁ = G
+      · subst hEq; simp [GTable.update]
+      · simpa [GTable.update, hEq] using hsome
+    · -- GTableInv: entries other than `G` are untouched (old `hgtable`).  `G`'s
+      -- first field still holds the pre-state `v₁` (old `hgtable` at `G`); its
+      -- second field is the freshly stored `v₂` — the popped focus `val v₂` —
+      -- whose runtime K-set the pre-state `GInitInv` (`hgi`, reading `two` off
+      -- the `init2` frame) bounds by `σ.GFld two g`.  A dangling `v₂`
+      -- (`H ℓ' = none`) is ruled out by the pre-state focus-closedness `hc`.
+      intro g o HGo j ℓ' hj
       by_cases hEq : g = G
       · subst hEq
         have HGo' : some (⟨v₁, v₂⟩ : GEntry) = some o := by
           simpa [GTable.update] using HGo
         cases HGo'
-        cases i with
+        cases j with
         | one =>
           -- `v₁` was already recorded in the pre-state entry `G(v₁, ⊥)`, so
           -- this is the old `hgtable` instance at `G`.
           exact hgtable g ⟨v₁, none⟩ hnewG Idx.one ℓ'
-            (by simpa [GEntry.field] using hi)
+            (by simpa [GEntry.field] using hj)
         | two =>
-
-          sorry
+          -- `⟨v₁, v₂⟩.field two = v₂`, so `hj : v₂ = loc ℓ'`.
+          simp [GEntry.field] at hj
+          subst hj
+          have hbound : H.opOf (Value.loc ℓ') ⊆ σ.GFld Idx.two g := by
+            refine hgi g (Frame.init2 g (E.plug (Expr.gproj g i))) S
+              (by simp [Stack.topInit]) ?_ Idx.two ?_ (H.opOf (Value.loc ℓ')) KJR.val
+            · -- the topmost init frame is `g`'s own
+              intro f cfs r htop
+              simp [Stack.topInit] at htop
+              obtain ⟨rfl, -, -⟩ := htop
+              rfl
+            · -- its index is `two`
+              rfl
+          cases hHℓ' : H ℓ' with
+          | some c' =>
+            exact ⟨c', rfl, hbound (by simp [Heap.opOf, hHℓ'])⟩
+          | none =>
+            -- `v₂ = loc ℓ'` is the popped focus, so pre-state closedness `hc`
+            -- keeps `ℓ'` allocated: `H ℓ' = none` is impossible.
+            simp [Closed, hHℓ'] at hc
       · have hΓ : Γ g = some o := by
           simpa [GTable.update, hEq] using HGo
-        exact hgtable g o hΓ i ℓ' hi
+        exact hgtable g o hΓ j ℓ' hj
     · -- RetInv
       sorry
     · -- ArgInv
@@ -2092,5 +2245,11 @@ theorem inv_step_ipop {σ : Sigma} {e₁ e₂ : Expr} {G : GlobName} {L : Progra
       rcases hsub with ⟨e, h⟩ | h
       · exact Or.inl ⟨e, h.trans (List.suffix_cons _ _)⟩
       · exact Or.inr (h.trans (List.suffix_cons _ _))
+    · -- Closed
+      sorry
+    · -- FrameClosedInv
+      sorry
+    · -- InitFrameClosedInv
+      sorry
 
 end Proof
