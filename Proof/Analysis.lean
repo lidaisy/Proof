@@ -188,18 +188,7 @@ theorem KJC.app {G : GlobName} {σ : Sigma} {L : Program} {c : Ctx} {e₁ e₂ :
   | none => exact KJ0.app h
   | some C => exact KJ.app h
 
-/-! ### Step 2c: reachable expressions `e ∈ RE(G)`
-
-  A helper judgment (not a component of `σ`): the expressions whose evaluation
-  the initialization of `G` may trigger.  Each expression is tagged with the
-  class context it lives in (`Ctx`), so the constraint rules below can invoke
-  `⇓ᴷ` in the right context.  `RE` is seeded by the bodies of the reachable
-  methods `σ.RM G` and closed under subexpressions.
-
-  Note: we additionally seed `RE` with `G`'s own initializers
-  (`init₁`/`init₂`).  The paper's Step 2c omits this rule, but without it
-  `Dep(G)` misses the globals referenced directly by the initializers and
-  Theorem 1 fails. -/
+/-! ### Step 2c: reachable expressions `e ∈ RE(G)`  -/
 inductive RE (σ : Sigma) (L : Program) (G : GlobName) : Ctx → Expr → Prop
   | init₁ {e₁ e₂} : Program.HasObject L G e₁ e₂ → RE σ L G none e₁
   | init₂ {e₁ e₂} : Program.HasObject L G e₁ e₂ → RE σ L G none e₂
@@ -233,42 +222,24 @@ theorem Dep.trans {σ : Sigma} {L : Program} {G G' : GlobName}
     (h : G' ∈ Dep σ L G) : Dep σ L G' ⊆ Dep σ L G :=
   fun _ h' => DepJ.trans h h'
 
-/-! ### The analysis fixpoint
-
-  `FixPoint σ L` asserts that `σ` is closed under the remaining inference
-  rules: `RM` seeding and closure (Step 2b), `Ret` (Step 2e), `GFldᵢ`
-  (Step 2f), and the `This`/`Fldᵢ`/`Param` constraints over the reachable
-  expressions (Step 2g, "Updating This, Fields, and Param Constraints"). -/
+/-! ### The analysis fixpoint -/
 structure FixPoint (σ : Sigma) (L : Program) : Prop where
-  /-- Step 2b (seeding): methods called by `G`'s own initializers are reachable. -/
   rm_init : ∀ {G e₁ e₂ K₁ K₂}, Program.HasObject L G e₁ e₂ →
       Calls0 G σ L e₁ K₁ → Calls0 G σ L e₂ K₂ → (K₁ ∪ K₂) ⊆ σ.RM G
-  /-- Step 2b (closure): `RM` is closed under the `calls` of reachable bodies. -/
   rm_closed : ∀ {G C body K}, C ∈ σ.RM G → Program.HasClass L C body →
       Calls G C σ L body K → K ⊆ σ.RM G
-  /-- Step 2e: `Ret(G)(C)` contains the `⇓ᴷ` of `C.apply`'s body. -/
   ret_init : ∀ {G C e K}, Program.HasClass L C e →
       KJ G C σ L e K → K ⊆ σ.Ret G C
-  /-- Step 2f: `GFldᵢ(G)` contains the `⇓ᴷ` of `G`'s initializers. -/
   gfld_init_one : ∀ {G e₁ e₂ K₁}, Program.HasObject L G e₁ e₂ →
       KJ0 G σ L e₁ K₁ → K₁ ⊆ σ.GFld Idx.one G
   gfld_init_two : ∀ {G e₁ e₂ K₂}, Program.HasObject L G e₁ e₂ →
       KJ0 G σ L e₂ K₂ → K₂ ⊆ σ.GFld Idx.two G
-  /-- Step 2g: `Fldᵢ((G, D))` bounds for every reachable
-      `new D(e₁, e₂) ∈ RE(G)` — the ambient `G` is the owner of the new
-      `D`-object. -/
   fld_re : ∀ {G c D e₁ e₂ K₁ K₂}, RE σ L G c (Expr.newC D e₁ e₂) →
       KJC G σ L c e₁ K₁ → KJC G σ L c e₂ K₂ →
       K₁ ⊆ σ.Fld Idx.one G D ∧ K₂ ⊆ σ.Fld Idx.two G D
-  /-- Step 2g: `Param(G)(D)` bounds for every reachable application
-      `e₁(e₂) ∈ RE(G)` with `D` among the classes of the `⇓ᴷ` of `e₁`. -/
   param_re : ∀ {G c e₁ e₂ K₁ K₂}, RE σ L G c (Expr.app e₁ e₂) →
       KJC G σ L c e₁ K₁ → KJC G σ L c e₂ K₂ →
       ∀ D ∈ classes K₁, K₂ ⊆ σ.Param G D
-  /-- Step 2g: `G ∈ This(G)(D)` for every reachable `new D(e₁, e₂) ∈ RE(G)`
-      (the paper writes `This(G)(D) ⊇ G`, read as membership): a `D`-object
-      created during `G`'s initialization has `G` as its owner, so `this` in
-      `D.apply` may be `G`-owned. -/
   this_re : ∀ {G G₀ c K₁ e₁ e₂}, RE σ L G c (Expr.app e₁ e₂) → KJC G σ L c e₁ K₁ →
       G₀ = objects K₁ → ∀ D ∈ classes K₁, G₀ ⊆ σ.This G D
 

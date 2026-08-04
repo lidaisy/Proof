@@ -270,6 +270,7 @@ inductive Step (L : Program) : Config → Config → Prop where
       swap the top frame to `init2`, and start evaluating the pending `e₂`. -/
   | inext {H : Heap} {Γ : GTable} {S : Stack} {G : GlobName}
           {e₂ k : Expr} {v₁ : Value} :
+      Γ G = some ⟨none, none⟩ →
       Step L (.mk H Γ (Frame.init1 G e₂ k :: S) (Expr.val v₁))
              (.mk H (Γ[G↦ ⟨some v₁, none⟩]) (Frame.init2 G k :: S) e₂)
   /-- I-Pop: the second field of `G` has reduced to `v₂`; record `G(v₁,v₂)`,
