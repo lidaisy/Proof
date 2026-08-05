@@ -205,17 +205,38 @@ inductive Config
   | crash
   deriving Inhabited
 
+def ContextFree : Expr → Prop
+| Expr.thisE      => False
+| Expr.paramE     => False
+| Expr.newC _ a b => ContextFree a ∧ ContextFree b
+| Expr.app a b    => ContextFree a ∧ ContextFree b
+| Expr.proj a _   => ContextFree a
+| Expr.gproj _ _  => True
+| Expr.val _      => True
+
+def ValueFree : Expr → Prop
+| Expr.thisE      => True
+| Expr.paramE     => True
+| Expr.newC _ a b => ValueFree a ∧ ValueFree b
+| Expr.app a b    => ValueFree a ∧ ValueFree b
+| Expr.proj a _   => ValueFree a
+| Expr.gproj _ _  => True
+| Expr.val _      => False
+
+
 /-! ### The step relation -/
 
 /-- One small step `→` on configurations.  Each computational rule fires a redex
     inside an arbitrary evaluation context `E` (this folds in E-Ctx). -/
 inductive Step (L : Program) : Config → Config → Prop where
-  | this {H : Heap} {Γ : GTable} {S: Stack} {E κ: ECtx} {t : Loc} {p : Value}:
+  | this {G : GlobName} {H : Heap} {Γ : GTable} {S: Stack} {E κ: ECtx} {t : Loc} {p : Value} {c : ClsIns}:
     S.topCall = Frame.call t p κ →
+    H t = some c →
     Step L (.mk H Γ S (E.plug Expr.thisE))
              (.mk H Γ S (E.plug (Expr.val (Value.loc t))))
-  | param {H : Heap} {Γ : GTable} {S: Stack} {E κ: ECtx} {t : Loc} {p : Value}:
+  | param {G : GlobName} {H : Heap} {Γ : GTable} {S: Stack} {E κ: ECtx} {t : Loc} {p : Value} {c : ClsIns}:
     S.topCall = Frame.call t p κ →
+    H t = some c →
     Step L (.mk H Γ S (E.plug Expr.paramE))
              (.mk H Γ S (E.plug (Expr.val p)))
   /-- E-Proj: `ℓ.i → vᵢ` where `H(ℓ) = C(v₁,v₂)`. -/
@@ -239,22 +260,25 @@ inductive Step (L : Program) : Config → Config → Prop where
   /-- E-AppBeta: `ℓ(v) → body[ℓ/this][v/param]`. -/
   | methCall {H : Heap} {Γ : GTable} {S: Stack} {E : ECtx} {ℓ : Loc} {C : ClassName}
             {o : ClsIns} {v : Value} {body : Expr} :
-      H ℓ = some o →
-      o.cls = C →
+      Stack.HasInit S →
+      Stack.TopInit S G →
+      H ℓ = some (ClsIns.mk C G₀ v₁ v₂) →
       Program.HasClass L C body →
+      ValueFree body →
       Step L (.mk H Γ S (E.plug (Expr.app (Expr.val (Value.loc ℓ)) (Expr.val v))))
              (.mk H Γ (Stack.push (Frame.call ℓ v E) S) body)
   | ret {H : Heap} {Γ : GTable} {S: Stack} {κ : ECtx} {t : Loc} {C : ClassName}
             {o : ClsIns} {p v : Value} {body : Expr} :
+      H t = some ⟨C, G, v₁, v₂⟩ →
       Step L (.mk H Γ ((Frame.call t p κ)::S) v)
              (.mk H Γ S (κ.plug v))
   /-- E-NewAlloc: `new C(v₁,v₂) → ℓ` for fresh `ℓ`. -/
   | newAlloc {H : Heap} {Γ : GTable} {S cfs r: Stack} {E : ECtx} {C : ClassName} {v₁ v₂ : Value}
              {ℓ : Loc} {body : Expr} {G : GlobName} {i : Frame} :
-      H ℓ = none →
-      Program.HasClass L C body →
-      Stack.topInit S = some (i, cfs, r) →
+      Stack.HasInit S →
       Stack.TopInit S G →
+      (Γ G).isSome →
+      H ℓ = none →
       Step L (.mk H Γ S (E.plug (Expr.newC C (Expr.val v₁) (Expr.val v₂))))
              (.mk (H[ℓ ↦ ⟨C, G, v₁, v₂⟩]) Γ S (E.plug (Expr.val (Value.loc ℓ))))
   /-- I-Push: on first access of an uninitialised `G`, register `G(⊥,⊥)`, push
@@ -264,19 +288,27 @@ inductive Step (L : Program) : Config → Config → Prop where
           {e₁ e₂ : Expr} :
       Program.HasObject L G e₁ e₂ →
       Γ G = none →
+      ContextFree e₁ →
+      ValueFree e₁ →
+      ContextFree e₂ →
      Step L (.mk H Γ S (E.plug (Expr.gproj G i)))
             (.mk H (Γ[G↦ ⟨none, none⟩]) (Stack.push (Frame.init1 G e₂ (E.plug (Expr.gproj G i))) S) e₁)
   /-- I-Next: the first field of `G` has reduced to `v₁`; record `G(v₁,⊥)`,
       swap the top frame to `init2`, and start evaluating the pending `e₂`. -/
   | inext {H : Heap} {Γ : GTable} {S : Stack} {G : GlobName}
           {e₂ k : Expr} {v₁ : Value} :
+      Program.HasObject L G e₁ e₂ →
       Γ G = some ⟨none, none⟩ →
+      ContextFree e₁ →
+      ValueFree e₂ →
+      ContextFree e₂ →
       Step L (.mk H Γ (Frame.init1 G e₂ k :: S) (Expr.val v₁))
              (.mk H (Γ[G↦ ⟨some v₁, none⟩]) (Frame.init2 G k :: S) e₂)
   /-- I-Pop: the second field of `G` has reduced to `v₂`; record `G(v₁,v₂)`,
       pop the `init2` frame, and resume at the saved resumption `κ`. -/
   | ipop {H : Heap} {Γ : GTable} {S : Stack} {G : GlobName}
           {k : Expr} {v₁ v₂ : Value} :
+      Program.HasObject L G e₁ e₂ →
       Γ G = some ⟨some v₁, none⟩ →
       Step L (.mk H Γ (Frame.init2 G k :: S) (Expr.val v₂))
              (.mk H (Γ[G↦ ⟨some v₁, some v₂⟩]) S k)
