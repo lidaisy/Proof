@@ -98,13 +98,13 @@ theorem partial_star {c c': Config} {L : Program}
             | head hs _ => cases hs
         | mk H₁ Γ₁ S₁ e₁ => exact ih (partial_step hstep h)
 
-theorem partially_init_obj_on_stack1 {Γ : GTable} {Gₘ: GlobName}
-    {H : Heap} {S : Stack} {e : Expr} {L : Program}
+theorem partially_init_obj_on_stack {Γ : GTable} {G Gₘ: GlobName}
+    {H : Heap} {S : Stack} {e : Expr} {L : Program} {u₁ u₂ : GVal}
     (hrun : Star L
       (.mk (fun _ => none) (fun _ => none) List.nil (Expr.gproj Gₘ Idx.one))
       (.mk H Γ S e))
-    : ∀ G u₁ u₂, Γ G = (GEntry.mk u₁ u₂) → u₁ = none ∨ u₂ = none → inGlobals G S := by
-  intro G u₁ u₂ hG hnone
+    (hG : Γ G = (GEntry.mk u₁ u₂)) (hnone: u₁ = none ∨ u₂ = none)
+    : inGlobals G S := by
   have hinit: PartialOnStack (.mk (fun _ => none) (fun _ => none) List.nil (Expr.gproj Gₘ Idx.one)) := by
     intro G₀ w₁ w₂ hG₀ _
     simp at hG₀
