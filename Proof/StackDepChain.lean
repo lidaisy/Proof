@@ -14,11 +14,11 @@ def StackDep (σ : Sigma) (L : Program) : Config → Prop
   | .crash => True
 
 theorem StackDep.topInit_dep {σ : Sigma} {L : Program} {H : Heap} {Γ : GTable}
-    {S : Stack} {e : Expr} (hs : StackDep σ L (.mk H Γ S e))
-    {it cfs rt : _} (hti : S.topInit = some (it, cfs, rt)) {Gt : GlobName}
-    (hGt : it.glob = some Gt)
-    {pre : Stack} {f : Frame} {r : Stack} (hS : S = pre ++ f :: r)
-    {Gf : GlobName} (hGf : f.glob = some Gf) :
+    {S cfs rt: Stack} {e : Expr} {it : Frame} {Gt : GlobName}
+    {pre : Stack} {f : Frame} {r : Stack} {Gf : GlobName}
+    (hs : StackDep σ L (.mk H Γ S e)) (hti : S.topInit = some (it, cfs, rt))
+    (hGt : it.glob = some Gt) (hS : S = pre ++ f :: r)
+    (hGf : f.glob = some Gf) :
     Gt = Gf ∨ Gt ∈ Dep σ L Gf := by
   have hSsplit : S = cfs ++ it :: rt := Stack.topInit_split hti
   have h1 : f :: r <:+ S := ⟨pre, hS.symm⟩
@@ -52,7 +52,6 @@ theorem StackDep.topInit_dep {σ : Sigma} {L : Program} {H : Heap} {Γ : GTable}
       rw [Stack.topInit_calls_glob hti f hfmem] at hGf
       simp at hGf
 
--- for all G in the stack, G' in Dep(G)
 theorem stack_dep_step {L : Program} {σ : Sigma} {c c' : Config}
   (hinv : Inv σ L c) (hrinv : REInv σ L c) (hstep : Step L c c') (hs : StackDep σ L c) :
   StackDep σ L c' := by
@@ -129,10 +128,7 @@ theorem stack_dep_step {L : Program} {σ : Sigma} {c c' : Config}
           · exact DepJ.trans hdep haip
         · exact hs pre' f r Gf hS hGf g hg' G₀ hG₀
 
-/-- `StackDep` is preserved along a run: iterate `stack_dep_step`, dragging the
-    two invariants it needs (`Inv`, `REInv`) along with their own preservation
-    lemmas. -/
-theorem stack_dep_chain {L : Program} {σ : Sigma} {c c' : Config} (hσ : FixPoint σ L)
+theorem stack_dep_star {L : Program} {σ : Sigma} {c c' : Config} (hσ : FixPoint σ L)
   (hinv : Inv σ L c) (hrinv : REInv σ L c) (hs : StackDep σ L c) (hstar : Star L c c') :
   StackDep σ L c' := by
   induction hstar with
@@ -141,14 +137,11 @@ theorem stack_dep_chain {L : Program} {σ : Sigma} {c c' : Config} (hσ : FixPoi
       exact ih (inv_preservation_step' hσ hinv hstep) (REInv.step' hσ hinv hrinv hstep)
         (stack_dep_step hinv hrinv hstep hs)
 
-/-- `StackDep` at any configuration reachable from the initial one: the empty
-    stack admits no decomposition `pre ++ f :: r`, so `StackDep` holds there
-    vacuously and `stack_dep_chain` carries it along the run. -/
 theorem stack_dep_run {L : Program} {σ : Sigma} {Gₘ : GlobName} {c : Config}
     (hσ : FixPoint σ L)
     (hstar : Star L (.mk (fun _ => none) (fun _ => none) List.nil (Expr.gproj Gₘ Idx.one)) c) :
     StackDep σ L c := by
-  refine stack_dep_chain hσ inv_empty REInv.empty ?_ hstar
+  refine stack_dep_star hσ inv_empty REInv.empty ?_ hstar
   intro pre f r G hS
   cases pre <;> simp at hS
 

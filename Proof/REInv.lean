@@ -5,27 +5,6 @@ import Proof.CorrectnessRelation
 
 namespace Proof
 
--- /-- Reachability propagates down an evaluation context: if the whole focus
---     `E.plug e` is reachable from `G`, then so is the plugged sub-expression `e`.
---     Proved by induction on `E`, discharging each frame with the matching `RE`
---     congruence constructor (`proj` / `app₁` / `app₂` / `newC₁` / `newC₂`). -/
--- theorem RE.plug {σ : Sigma} {L : Program} {G : GlobName} {c : Ctx} :
---     ∀ (E : ECtx) {e : Expr}, RE σ L G c (E.plug e) → RE σ L G c e
---   | .hole,        _, h => h
---   | .projc E _,   _, h => RE.plug E (RE.proj h)
---   | .appL E _,    _, h => RE.plug E (RE.app₁ h)
---   | .appR _ E,    _, h => RE.plug E (RE.app₂ h)
---   | .newL _ E _,  _, h => RE.plug E (RE.newC₁ h)
---   | .newR _ _ E,  _, h => RE.plug E (RE.newC₂ h)
-
-/-- Runtime reachability: the runtime analogue of `RE`. Where `RE` is purely
-    static, `RRE` additionally admits the runtime leaves produced by reduction
-    (values, `this`, `param`) and is closed *upward* under the term
-    constructors, so an actual runtime focus (a reduct of a reachable static
-    expression, with values sitting in evaluation position) genuinely inhabits
-    it. Crucially there is **no** rule concluding a `gproj` other than `static`,
-    so a runtime-reachable `gproj` still traces back to a static `RE` fact
-    (see `RRE.dep`). Mirrors how `KJR` handles runtime expressions. -/
 inductive RRE (σ : Sigma) (L : Program) (G : GlobName) : Ctx → Expr → Prop
   | static {c e}      : RE σ L G c e → RRE σ L G c e
   | val {c v}         : RRE σ L G c (Expr.val v)
@@ -115,14 +94,6 @@ theorem RRE.dep {σ : Sigma} {L : Program} {G : GlobName} {c : Ctx} {G' : GlobNa
   cases h with
   | static hRE => exact DepJ.direct hRE
 
-/-- The focus is runtime-reachable from the global `G` pinned by the topmost
-    `init` frame, in the context induced by the topmost `call` frame (if any).
-
-    The receiver data `t p κ Cl` is quantified *inside* the `topCall = some`
-    branch, not over the whole conjunction: the `topCall = none` branch does not
-    mention it, so hoisting it outward would force every consumer of that branch
-    to invent dummy witnesses (`Loc`, `Value`, `ECtx`, `ClsIns` have no
-    `Inhabited` instances) just to instantiate binders the statement ignores. -/
 def RE.focus (σ : Sigma) (L : Program) (H : Heap) (S : Stack) (e : Expr) : Prop :=
   ∀ G i cfs r, S.topInit = some (i, cfs, r) → Stack.TopInit S G →
     ((∀ t p κ Cl, S.topCall = some (Frame.call t p κ) → H t = some Cl → RRE σ L G Cl.cls e) ∧
@@ -136,27 +107,9 @@ def RE.contInit (σ : Sigma) (L : Program) (H : Heap) (S : Stack) : Prop :=
   ∀ G κ (S' : Stack), ((∃ e, Frame.init1 G e κ :: S' <:+ S) ∨ Frame.init2 G κ :: S' <:+ S) →
     RE.focus σ L H S' κ
 
-/-- The `init1` analogue of `RE.contInit` for the *pending* second initializer:
-    the expression `e` parked in an `init1 G e κ` frame is reachable from that
-    frame's own global `G`, in the empty context. Unlike a stored continuation,
-    `e` is not a reduct of the current focus, so it cannot be recovered from
-    `RE.focus`; `ipush` seeds it from `RE.init₂` and `inext` consumes it when it
-    swaps the frame to `init2` and makes `e` the focus. -/
 def RE.pendInit (σ : Sigma) (L : Program) (S : Stack) : Prop :=
   ∀ G e κ (S' : Stack), Frame.init1 G e κ :: S' <:+ S → RRE σ L G none e
 
-/-- The config invariant that will supply runtime-reachability of the focus.
-    For the top `init` global `G` and the context `c` induced by the enclosing
-    call frames, the focus is `RRE`-reachable, and so is every saved
-    continuation stored in an `init`/`call` frame (needed so that `ret` / `ipop`
-    / `inext`, which resume a continuation, preserve the invariant).
-
-    NB: unlike the earlier `REInvStep`, both `G` and `c` are read off the stack
-    rather than held fixed — `methCall` enters context `some C` (via `RE.body`,
-    `C ∈ RM G`) and `ipush` switches to a fresh global's initializer.
-    Preservation is proved per `Step` rule: `RRE.plug_replace` for the
-    computational rules, `RRE.static ∘ RE.body` for `methCall`, and the saved
-    continuations for the frame push/pop rules. -/
 def REInv (σ : Sigma) (L : Program) : Config → Prop
   | .mk H _Γ S e =>
       RE.focus σ L H S e ∧
