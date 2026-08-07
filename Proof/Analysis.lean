@@ -1,35 +1,7 @@
 import Proof.Syntax
 
-/-
-  Abstract interpretation (paper §"Abstract Interpretation").
-
-  The abstract state is
-      Σ = (Param, Fld₁, Fld₂, GFld₁, GFld₂, Ret, RM, This)
-  (paper §"Abstract Interpretation").  Abstract values are *owner pairs*
-  `(G, C) ∈ 𝔾 × ℂ` (paper §"Notation"): a class `C` is *owned* by the global
-  object `G` if an instance of `C` is created during the initialization of
-  `G`.  In the range of every component the `𝔾` position is the owner; this
-  is what lets field lookups cross global boundaries (the owner-pair domain
-  replaces the classes-only domain refuted on 2026-07-09 by the cross-global
-  `Fld`-flow counterexample).
-
-  `RE` and `Dep` are *not* components of `σ`:
-
-    * `RE σ L G` (Step 2c) is a helper judgment — the expressions reachable
-      from the initialization of `G`, derived from `σ.RM`;
-    * `Dep σ L G` (Step 2d) is a helper judgment: the transitive closure of
-      the direct global accesses read off `RE`.
-
-  `FixPoint σ L` asserts that `σ` is closed under the inference rules of
-  Steps 2a–2g, i.e. `σ` is a sound post-fixpoint of the analysis; this is the
-  form in which the analysis is consumed by Theorem 1.
--/
-
 namespace Proof
 
-/-- An *owner pair* `(G, C) ∈ 𝔾 × ℂ` (paper §"Notation"): the class `C`
-    together with its owner `G` — the global object during whose
-    initialization the `C`-instance was created. -/
 abbrev OPair := GlobName × ClassName
 
 /-- `classes(K)` (paper `classes(·)`): the class components of a
@@ -44,14 +16,6 @@ def objects (K : Set OPair) : Set GlobName := Prod.fst '' K
   · rintro ⟨⟨G, D'⟩, hp, rfl⟩; exact ⟨G, hp⟩
   · rintro ⟨G, hG⟩; exact ⟨(G, D), hG, rfl⟩
 
-/-- The abstract state `Σ = (Param, Fld₁, Fld₂, GFld₁, GFld₂, Ret, RM, This)`.
-    `Param`, `Fldᵢ` and `Ret` are indexed by the global object `G` whose
-    initialization is being analysed as well as by a class, and yield sets of
-    owner pairs (paper: `𝔾 → ℂ → P(𝔾 × ℂ)`; for `Fldᵢ` the domain pair
-    `(G, C)` is itself an owner pair — `G` owns the `C`-object whose fields
-    are described).  `GFldᵢ` is indexed by `G` alone and yields owner pairs;
-    `RM` yields plain classes (`𝔾 → P(ℂ)`); `This` yields the possible
-    *owners* of the receiver (`𝔾 → ℂ → P(𝔾)`). -/
 structure Sigma where
   Param : GlobName → ClassName → Set OPair
   Fld₁  : GlobName → ClassName → Set OPair
@@ -62,38 +26,14 @@ structure Sigma where
   RM    : GlobName → Set ClassName
   This  : GlobName → ClassName → Set GlobName
 
-/-- `Fldᵢ((G, C))` — the owner pairs the `i`-th field of a `C`-object owned
-    by `G` may point to. -/
 def Sigma.Fld (σ : Sigma) : Idx → GlobName → ClassName → Set OPair
   | Idx.one => σ.Fld₁
   | Idx.two => σ.Fld₂
 
-/-- `GFldᵢ(G)` — the owner pairs the `i`-th field of the global `G` may
-    point to. -/
 def Sigma.GFld (σ : Sigma) : Idx → GlobName → Set OPair
   | Idx.one => σ.GFld₁
   | Idx.two => σ.GFld₂
 
-/-! ### Step 1: class point-to judgment `G; C; σ; L̄ ⊢ e ⇓ᴷ K`
-
-  Syntax directed; `K` is a set of owner pairs.  The `this`/`param` cases use
-  the enclosing class `C`; the whole judgment is relative to the global `G`
-  under initialization.  (Values occur only in runtime foci, never in source
-  programs; they carry no statically-tracked class, so `⇓ᴷ` assigns them `∅`.)
-
-  Two deliberate deviations from the paper's literal rules, both flagged as
-  paper gaps:
-
-    * `proj`: the paper writes `e.i ⇓ᴷ ⋃_{D ∈ class(K_e)} Fldᵢ((G, D))`,
-      pairing every class with the *ambient* `G` and discarding the owner
-      carried in `K_e`.  That literal reading reinstates the Lean-refuted
-      cross-global counterexample the owner pairs were introduced to fix
-      (an object owned by `g₀` flowing into `g₁`'s init would be projected
-      through `Fldᵢ((g₁, ·))`).  We use the owner from the pair:
-      `⋃_{(G', D) ∈ K_e} Fldᵢ((G', D))`.
-    * `gproj`: the paper writes `G.i ⇓ᴷ GFldᵢ(G)` for the ambient `G` only;
-      as before we generalize to an arbitrary accessed global `G₀`, the only
-      total reading. -/
 inductive KJ (G : GlobName) (C : ClassName) (σ : Sigma) (L : Program) :
     Expr → Set OPair → Prop
   | thisE  : KJ G C σ L Expr.thisE (⋃ G' ∈ σ.This G C, {(G', C)})
@@ -106,9 +46,6 @@ inductive KJ (G : GlobName) (C : ClassName) (σ : Sigma) (L : Program) :
       KJ G C σ L e₁ K₁ → KJ G C σ L (Expr.app e₁ e₂) (⋃ p ∈ K₁, σ.Ret G p.2)
   | val {v} : KJ G C σ L (Expr.val v) ∅
 
-/-- `⇓ᴷ` in the empty class context (the paper's `G; ·; σ; L̄ ⊢ e ⇓ᴷ K`):
-    object initializers occur outside any class body, so they contain no
-    `this`/`param` and the rules consulting the class position never apply. -/
 inductive KJ0 (G : GlobName) (σ : Sigma) (L : Program) : Expr → Set OPair → Prop
   | proj {e i K} :
       KJ0 G σ L e K → KJ0 G σ L (Expr.proj e i) (⋃ p ∈ K, σ.Fld i p.1 p.2)
@@ -118,11 +55,6 @@ inductive KJ0 (G : GlobName) (σ : Sigma) (L : Program) : Expr → Set OPair →
       KJ0 G σ L e₁ K₁ → KJ0 G σ L (Expr.app e₁ e₂) (⋃ p ∈ K₁, σ.Ret G p.2)
   | val {v} : KJ0 G σ L (Expr.val v) ∅
 
-/-! ### Step 2a: directly called methods `G; C; σ; L̄ ⊢ e calls K`
-
-  `K` is a set of plain classes (it feeds `RM : 𝔾 → P(ℂ)`, Step 2b); in the
-  `app` rule the owner pairs of the function position's `⇓ᴷ` are projected to
-  their class components via `classes`. -/
 inductive Calls (G : GlobName) (C : ClassName) (σ : Sigma) (L : Program) :
     Expr → Set ClassName → Prop
   | thisE  : Calls G C σ L Expr.thisE ∅
@@ -137,7 +69,6 @@ inductive Calls (G : GlobName) (C : ClassName) (σ : Sigma) (L : Program) :
       Calls G C σ L (Expr.app e₁ e₂) ((classes K₁ ∪ K₂) ∪ K₃)
   | val {v} : Calls G C σ L (Expr.val v) ∅
 
-/-- `calls` in the empty class context, for object initializers. -/
 inductive Calls0 (G : GlobName) (σ : Sigma) (L : Program) : Expr → Set ClassName → Prop
   | gproj {G₀ i} : Calls0 G σ L (Expr.gproj G₀ i) ∅
   | proj {e i K} : Calls0 G σ L e K → Calls0 G σ L (Expr.proj e i) K
@@ -149,18 +80,11 @@ inductive Calls0 (G : GlobName) (σ : Sigma) (L : Program) : Expr → Set ClassN
       Calls0 G σ L (Expr.app e₁ e₂) ((classes K₁ ∪ K₂) ∪ K₃)
   | val {v} : Calls0 G σ L (Expr.val v) ∅
 
-/-- The optional class context an expression lives in: `some C` for code in the
-    body of `C.apply`, `none` for initializer code (the paper's `·`). -/
 abbrev Ctx := Option ClassName
 
-/-- `⇓ᴷ` in an optional class context: dispatches to `KJ0` (initializer code)
-    or `KJ` (method-body code). -/
 def KJC (G : GlobName) (σ : Sigma) (L : Program) : Ctx → Expr → Set OPair → Prop
   | none   => KJ0 G σ L
   | some C => KJ G C σ L
-
-/-! The structural `⇓ᴷ` rules are shared by `KJ0` and `KJ`, so they lift to
-    `KJC` in an arbitrary context. -/
 
 theorem KJC.proj {G : GlobName} {σ : Sigma} {L : Program} {c : Ctx} {e : Expr} {i : Idx}
     {K : Set OPair} (h : KJC G σ L c e K) :
@@ -188,7 +112,6 @@ theorem KJC.app {G : GlobName} {σ : Sigma} {L : Program} {c : Ctx} {e₁ e₂ :
   | none => exact KJ0.app h
   | some C => exact KJ.app h
 
-/-! ### Step 2c: reachable expressions `e ∈ RE(G)`  -/
 inductive RE (σ : Sigma) (L : Program) (G : GlobName) : Ctx → Expr → Prop
   | init₁ {e₁ e₂} : Program.HasObject L G e₁ e₂ → RE σ L G none e₁
   | init₂ {e₁ e₂} : Program.HasObject L G e₁ e₂ → RE σ L G none e₂
@@ -199,28 +122,14 @@ inductive RE (σ : Sigma) (L : Program) (G : GlobName) : Ctx → Expr → Prop
   | app₁ {c e₁ e₂} : RE σ L G c (Expr.app e₁ e₂) → RE σ L G c e₁
   | app₂ {c e₁ e₂} : RE σ L G c (Expr.app e₁ e₂) → RE σ L G c e₂
 
-/-! ### Step 2d: computing `Dep(G)`
-
-  A helper judgment, not a component of `σ`: `G₀ ∈ Dep(G)` iff some reachable
-  expression accesses `G₀.i` directly, or transitively so
-  (`G' ∈ Dep(G) → Dep(G') ⊆ Dep(G)`). -/
 inductive DepJ (σ : Sigma) (L : Program) : GlobName → GlobName → Prop
-  /-- A reachable expression accesses `G₀.i` directly. -/
   | direct {G G₀ : GlobName} {c : Ctx} {i : Idx} :
       RE σ L G c (Expr.gproj G₀ i) → DepJ σ L G G₀
-  /-- Transitivity: `G' ∈ Dep(G) → Dep(G') ⊆ Dep(G)`. -/
   | trans {G G' G₀ : GlobName} :
       DepJ σ L G G' → DepJ σ L G' G₀ → DepJ σ L G G₀
 
-/-- `Dep(G)`, as a set of globals. -/
 def Dep (σ : Sigma) (L : Program) (G : GlobName) : Set GlobName :=
   { G₀ | DepJ σ L G G₀ }
-
-/-- The Step 2d transitivity rule, phrased on `Dep`:
-    `G' ∈ Dep(G) → Dep(G') ⊆ Dep(G)`. -/
-theorem Dep.trans {σ : Sigma} {L : Program} {G G' : GlobName}
-    (h : G' ∈ Dep σ L G) : Dep σ L G' ⊆ Dep σ L G :=
-  fun _ h' => DepJ.trans h h'
 
 /-! ### The analysis fixpoint -/
 structure FixPoint (σ : Sigma) (L : Program) : Prop where

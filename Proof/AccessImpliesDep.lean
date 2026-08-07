@@ -8,7 +8,7 @@ namespace Proof
 
 theorem acc_implies_dep {L : Program} {G G': GlobName} {S cfs r : Stack}
   {σ : Sigma} {E : ECtx} {H : Heap} {Γ : GTable} {i : Idx} {ifr : Frame}
-  (hti : S.topInit = some (ifr, cfs, r)) (htiG : Stack.TopInit S G)
+  (hti : S.topInit = some (ifr, cfs, r)) (htiG : ifr.glob = some G)
   (hinv : Inv σ L (.mk H Γ S (E.plug (Expr.gproj G' i))))
   (hrinv : REInv σ L (.mk H Γ S (E.plug (Expr.gproj G' i)))) :
   G' ∈ Dep σ L G := by

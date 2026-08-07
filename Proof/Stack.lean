@@ -3,11 +3,46 @@ import Proof.Semantics
 /-! # Structural lemmas about the frame stack
 
   The stack datatype and its operations (`Stack.push`/`pop`/`topCall`/`topInit`,
-  `Stack.TopInit`, `Stack.HasInit`, …) live in `Proof.Semantics`; this file
-  collects the purely structural facts about them, so the invariant files can
-  use them without re-deriving anything. -/
+  `Stack.HasInit`, …) live in `Proof.Semantics`; this file collects the purely
+  structural facts about them, so the invariant files can use them without
+  re-deriving anything. -/
 
 namespace Proof
+
+/-- `topInit` is a function, so any two decompositions of the same stack name
+    the same frame: an `i.glob = some G` guard obtained from one `hti` transfers
+    verbatim to any other. -/
+theorem Stack.topInit_glob_eq {S : Stack} {G : GlobName} {i i' : Frame}
+    {cfs cfs' r r' : Stack} (hti : S.topInit = some (i, cfs, r))
+    (hgl : i.glob = some G) (hti' : S.topInit = some (i', cfs', r')) :
+    i'.glob = some G := by
+  rw [hti] at hti'
+  cases hti'
+  exact hgl
+
+/-- `topInit` looks straight through a pushed `call` frame: it reports the same
+    init frame and the same rest-of-stack, with the pushed frame prepended to
+    the call-frame list.  Destructing with this keeps the *same* frame name `i`
+    on both stacks, so an `i.glob = some G` guard transfers verbatim. -/
+theorem Stack.topInit_cons_call {S : Stack} {t : Loc} {p : Value} {κ : ECtx}
+    {i : Frame} {cfs r : Stack}
+    (h : Stack.topInit (Frame.call t p κ :: S) = some (i, cfs, r)) :
+    ∃ cfs₀, cfs = Frame.call t p κ :: cfs₀ ∧ S.topInit = some (i, cfs₀, r) := by
+  rw [Stack.topInit] at h
+  cases hs : S.topInit with
+  | none => rw [hs] at h; simp at h
+  | some x =>
+    obtain ⟨i₀, cfs₀, r₀⟩ := x
+    rw [hs] at h
+    simp only [Option.map, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl, rfl⟩ := h
+    exact ⟨cfs₀, rfl, rfl⟩
+
+/-- The converse of `Stack.topInit_cons_call`. -/
+theorem Stack.topInit_push_call {S : Stack} {t : Loc} {p : Value} {κ : ECtx}
+    {i : Frame} {cfs r : Stack} (h : S.topInit = some (i, cfs, r)) :
+    Stack.topInit (Frame.call t p κ :: S) = some (i, Frame.call t p κ :: cfs, r) := by
+  simp [Stack.topInit, h]
 
 /-- The init frame returned by `topInit` is never a `call` frame: it is
     produced only by the `f :: fs => some (f, [], fs)` branch (with `f` an

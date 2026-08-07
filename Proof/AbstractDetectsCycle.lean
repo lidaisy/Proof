@@ -26,12 +26,7 @@ theorem abstract_detects_cycle {L : Program} {G Gₘ: GlobName} {S : Stack}
 
   obtain ⟨ifr, cfs, r, hti⟩ := Stack.hasInit_of_glob hfS hfG
   obtain ⟨Gₜ, hGₜ⟩ := Frame.glob_of_notCall (Stack.topInit_notCall hti)
-  have htiG : Stack.TopInit S Gₜ := by
-    intro i' cfs' r' h
-    rw [hti] at h
-    simp only [Option.some.injEq, Prod.mk.injEq] at h
-    obtain ⟨rfl, -, -⟩ := h
-    exact hGₜ
+  have htiG : ifr.glob = some Gₜ := hGₜ
 
   have hGInDepGₜ : G ∈ Dep σ L Gₜ := acc_implies_dep hti htiG hinv hrinv
 

@@ -62,7 +62,7 @@ theorem stack_dep_step {L : Program} {σ : Sigma} {c c' : Config}
   | gproj _ _ => exact hs
   | newAlloc _ _ _ _ => exact hs
   | uninit _ _ => trivial
-  | @methCall H Γ S E ℓ C G G₀ v v₁ v₂ body _ _ _ _ _ =>
+  | @methCall H Γ S E ℓ C G G₀ v v₁ v₂ body _ _ _ _ _ _ _ _ =>
       -- Pushes a `call` frame, which records no global
       intro pre f r Gf hS hGf g hg G' hG'
       rcases pre with _ | ⟨p₀, pre'⟩
@@ -112,12 +112,7 @@ theorem stack_dep_step {L : Program} {σ : Sigma} {c c' : Config}
           have hfS : f ∈ S := by rw [hS]; simp
           obtain ⟨it, cfs, rt, hti⟩ := Stack.hasInit_of_glob hfS hGf
           obtain ⟨Gt, hGt⟩ := Frame.glob_of_notCall (Stack.topInit_notCall hti)
-          have htiG : Stack.TopInit S Gt := by
-            intro i' cfs' r' h
-            rw [hti] at h
-            simp only [Option.some.injEq, Prod.mk.injEq] at h
-            obtain ⟨rfl, -, -⟩ := h
-            exact hGt
+          have htiG : it.glob = some Gt := hGt
           -- `acc_implies_dep`: the focus `E.plug (G.i)` is reachable from the *topmost*
           -- init global `Gt`, so `G ∈ Dep(Gt)`.
           have haip : G ∈ Dep σ L Gt := acc_implies_dep hti htiG hinv hrinv

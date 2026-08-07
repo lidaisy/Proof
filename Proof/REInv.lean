@@ -95,7 +95,7 @@ theorem RRE.dep {σ : Sigma} {L : Program} {G : GlobName} {c : Ctx} {G' : GlobNa
   | static hRE => exact DepJ.direct hRE
 
 def RE.focus (σ : Sigma) (L : Program) (H : Heap) (S : Stack) (e : Expr) : Prop :=
-  ∀ G i cfs r, S.topInit = some (i, cfs, r) → Stack.TopInit S G →
+  ∀ G i cfs r, S.topInit = some (i, cfs, r) → i.glob = some G →
     ((∀ t p κ Cl, S.topCall = some (Frame.call t p κ) → H t = some Cl → RRE σ L G Cl.cls e) ∧
     (S.topCall = none → RRE σ L G none e))
 
@@ -312,9 +312,9 @@ theorem reinv_step_ipush {σ : Sigma} {L : Program} {H : Heap} {Γ : GTable} {S 
   · -- Focus
     intro G' i' cfs r hti htiG'
     have hGG : G = G' := by
-      have hgl := htiG' (Frame.init1 G e₂ (E.plug (Expr.gproj G i))) List.nil S
-        (by simp [Stack.push, Stack.topInit])
-      simpa [Frame.glob] using hgl
+      simp [Stack.push, Stack.topInit] at hti
+      obtain ⟨rfl, -, -⟩ := hti
+      simpa [Frame.glob] using htiG'
     subst hGG
     refine ⟨fun _ _ _ _ htc _ => absurd htc (by simp [Stack.push, Stack.topCall]), fun _ => ?_⟩
     exact RRE.static (RE.init₁ hobj)
@@ -351,8 +351,9 @@ theorem reinv_step_inext {σ : Sigma} {L : Program} {H : Heap} {Γ : GTable} {S 
   · -- Focus
     intro G' i' cfs r hti htiG'
     have hGG : G = G' := by
-      have hgl := htiG' (Frame.init2 G k) List.nil S (by simp [Stack.topInit])
-      simpa [Frame.glob] using hgl
+      simp [Stack.topInit] at hti
+      obtain ⟨rfl, -, -⟩ := hti
+      simpa [Frame.glob] using htiG'
     subst hGG
     exact ⟨fun _ _ _ _ htc _ => absurd htc (by simp [Stack.topCall]),
       fun _ => hpi G e₂ k S (List.suffix_refl _)⟩
@@ -403,8 +404,8 @@ theorem REInv.step {σ : Sigma} {L : Program} {H H' : Heap}
     | param _                     => exact reinv_step_param hinv
     | proj _                      => exact reinv_step_proj hinv
     | gproj _ _                   => exact reinv_step_gproj hinv
-    | methCall hHi hG hHl hcls hbody =>
-        exact reinv_step_methCall hHl hcls hinv (inv_step_app hHi hG hHl hcls hbody hσ hi)
+    | methCall hti htiG hHl hcls hbody =>
+        exact reinv_step_methCall hHl hcls hinv (inv_step_app hti htiG hHl hcls hbody hσ hi)
     | ret                         => exact reinv_step_ret hinv
     | newAlloc _ _ _ hHl          => exact reinv_step_alloc hHl hi hinv
     | ipush hobj _                => exact reinv_step_ipush hobj hinv

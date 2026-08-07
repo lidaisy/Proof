@@ -109,9 +109,6 @@ def Stack.topInit : Stack → Option (Frame × Stack × Stack)
       (Stack.topInit fs).map fun (f, calls, rest) => (f, Frame.call t p κ :: calls, rest)
   | f :: fs => some (f, [], fs)
 
-def Stack.TopInit (S : Stack) (G : GlobName) : Prop :=
-  ∀ i cfs r, S.topInit = some (i, cfs, r) → i.glob = G
-
 def Stack.HasInit (S : Stack) : Prop :=
   ∃ i cfs r, S.topInit = some (i, cfs, r)
 
@@ -173,9 +170,10 @@ inductive Step (L : Program) : Config → Config → Prop where
       g.field i = none →
       Step L (.mk H Γ S (E.plug (Expr.gproj G i))) .crash
   | methCall {H : Heap} {Γ : GTable} {S: Stack} {E : ECtx} {ℓ : Loc} {C : ClassName}
-            {G G₀ : GlobName} {v v₁ v₂ : Value} {body : Expr} :
-      Stack.HasInit S →
-      Stack.TopInit S G →
+            {G G₀ : GlobName} {v v₁ v₂ : Value} {body : Expr}
+            {ifr : Frame} {cfs r : Stack} :
+      S.topInit = some (ifr, cfs, r) →
+      ifr.glob = some G →
       H ℓ = some (ClsIns.mk C G₀ v₁ v₂) →
       Program.HasClass L C body →
       ValueFree body →
@@ -187,9 +185,9 @@ inductive Step (L : Program) : Config → Config → Prop where
       Step L (.mk H Γ ((Frame.call t p κ)::S) v)
              (.mk H Γ S (κ.plug v))
   | newAlloc {H : Heap} {Γ : GTable} {S : Stack} {E : ECtx} {C : ClassName} {v₁ v₂ : Value}
-             {ℓ : Loc} {G : GlobName} :
-      Stack.HasInit S →
-      Stack.TopInit S G →
+             {ℓ : Loc} {G : GlobName} {ifr : Frame} {cfs r : Stack} :
+      S.topInit = some (ifr, cfs, r) →
+      ifr.glob = some G →
       (Γ G).isSome →
       H ℓ = none →
       Step L (.mk H Γ S (E.plug (Expr.newC C (Expr.val v₁) (Expr.val v₂))))
