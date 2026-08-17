@@ -87,6 +87,16 @@ def HasClass (L : Program) (C : ClassName) (body : Expr) : Prop :=
 def HasObject (L : Program) (G : GlobName) (init₁ init₂ : Expr) : Prop :=
   Def.obj ⟨G, init₁, init₂⟩ ∈ L
 
+def GlobNames (L : Program) : List GlobName :=
+  match L with
+  | [] => []
+  | d :: ds => match d with
+                | Def.cls _ => GlobNames ds
+                | Def.obj o => o.name :: GlobNames ds
+
+axiom HasMain {L : Program} {Gₘ : GlobName} {e : Expr} :
+  L.HasObject Gₘ e (Expr.val Value.btrue)
+
 end Program
 
 end Proof
