@@ -36,4 +36,17 @@ theorem abstract_detects_cycle {L : Program} {G Gₘ: GlobName} {S : Stack}
   · exact hGInDepGₜ
   · exact DepJ.trans hGₜInDepG hGInDepGₜ
 
+/-- if runtime crashes, abstract interpreter detects it. --/
+theorem abstract_detects_crash {L : Program} {Gₘ : GlobName} {σ : Sigma}
+    (hσ : FixPoint σ L)
+    (hcrash : Star L
+    (.mk (fun _ => none) (fun _ => none) List.nil (Expr.gproj Gₘ Idx.one)) (.crash))
+    : ∃ G, G ∈ Dep σ L G := by
+  obtain ⟨H, Γ, S, E, G, g, i, hrun, hΓ, hfield⟩ := crash_uninit hcrash rfl (by simp)
+  have hnone : g.u₁ = none ∨ g.u₂ = none := by
+    cases i with
+    | one => exact Or.inl hfield
+    | two => exact Or.inr hfield
+  exact ⟨G, abstract_detects_cycle hσ hrun hΓ hnone⟩
+
 end Proof

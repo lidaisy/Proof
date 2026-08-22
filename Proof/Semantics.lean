@@ -234,6 +234,26 @@ theorem trans : ∀ {a b c : Config}, Star L a b → Star L b c → Star L a c
 
 end Star
 
+theorem crash_uninit {L : Program} :
+    ∀ {c d : Config}, Star L c d → d = .crash → c ≠ .crash →
+    ∃ (H : Heap) (Γ : GTable) (S : Stack) (E : ECtx) (G : GlobName)
+      (g : GEntry) (i : Idx),
+      Star L c (.mk H Γ S (E.plug (Expr.gproj G i))) ∧
+        Γ G = some g ∧ g.field i = none := by
+  intro c d h
+  induction h with
+  | refl => intro hd hc; exact absurd hd hc
+  | @head c c' c'' hstep _ ih =>
+      intro hd hc
+      subst hd
+      by_cases hc' : c' = Config.crash
+      · -- the step into `.crash` is `uninit`, and it reads `G.i` right here
+        subst hc'
+        cases hstep with
+        | uninit hΓ hfield => exact ⟨_, _, _, _, _, _, _, Star.refl, hΓ, hfield⟩
+      · obtain ⟨H, Γ, S, E, G, g, i, hrun, hΓ, hfield⟩ := ih rfl hc'
+        exact ⟨H, Γ, S, E, G, g, i, Star.head hstep hrun, hΓ, hfield⟩
+
 /-- `G ∈ globals(S)`: some frame of the stack records the global `G`. -/
 def inGlobals (G : GlobName) (S : Stack) : Prop :=
   ∃ f ∈ S, f.glob = some G

@@ -1,14 +1,31 @@
 import Proof.Syntax
 import Proof.Semantics
 import Proof.Analysis
-import Proof.AbstractDetectsCycle
 import Mathlib.Logic.Relation
 import Mathlib.Data.List.Chain
 import Mathlib.Data.List.Nodup
 
+/-!
+  The algorithm (the constructive counterpart of `Analysis.lean`).
+
+  `Analysis.lean` posits one global `Sigma` and asks that it satisfy `FixPoint`.
+  Here the analysis is carried out object by object: a `State G` is the fragment
+  of that `Sigma` belonging to a single object `G`, and a `FixPoints` map records
+  the objects already solved.  `Solve` schedules the objects: it analyses them in
+  an arbitrary order, and when the analysis of `G` turns out to need an object
+  `G₀` that is not yet solved, `G` is suspended on a stack and `G₀` is solved
+  first.  If `G₀` is itself suspended, the program has an initialisation cycle.
+
+  `Solve` deliberately carries no analysis content: the per-object conditions
+  live in `FixPoint`/`ADepOk` and are *checked* when an object is closed.  In
+  particular `σ.ADep` is not accumulated by the transition rules — see `ADepOk`.
+-/
+
 namespace Algorithm
 
 open Proof (GlobName ClassName OPair Idx Program Expr classes objects)
+
+/-! ## Per-object states -/
 
 structure State (G : GlobName) where
   Param : ClassName → Set OPair
@@ -21,6 +38,7 @@ structure State (G : GlobName) where
   This  : ClassName → Set GlobName
   ADep  : Set GlobName
 
+/-- The all-empty state: what an object's analysis starts from. -/
 def State.zero (G : GlobName) : State G where
   Param := fun _ => ∅
   Fld₁  := fun _ => ∅
@@ -40,6 +58,8 @@ def State.GFld {G : GlobName} (σ : State G) : Idx → Set OPair
   | Idx.one => σ.GFld₁
   | Idx.two => σ.GFld₂
 
+/-! ## The map of solved objects -/
+
 abbrev FixPoints := (G : GlobName) → Option (State G)
 
 def InFixPoint (F : FixPoints) (G : GlobName) : Prop :=
@@ -52,6 +72,7 @@ def FixPoints.lookup (F : FixPoints) (G : GlobName) (hIn : InFixPoint F G) : Sta
     (hIn : InFixPoint F G) (h : F G = some σ) : F.lookup G hIn = σ := by
   simp [FixPoints.lookup, h]
 
+/-- Record `G`'s finished state.  Used by the closing rules of `Solve`. -/
 def FixPoints.insert (F : FixPoints) (G : GlobName) (σ : State G) : FixPoints :=
   fun G' => if h : G' = G then some (h ▸ σ) else F G'
 
@@ -70,6 +91,20 @@ theorem InFixPoint.mono_insert {F : FixPoints} {G G' : GlobName} {σ : State G}
   · subst hG; exact InFixPoint.insert
   · obtain ⟨σ', hσ'⟩ := h; exact ⟨σ', by rw [FixPoints.insert_other hG]; exact hσ'⟩
 
+/-! ## Abstraction -/
+
+/-- `KJ C σ L F e K D`: in class context `C`, expression `e` abstracts to the
+    owner-pair set `K`, consulting the fixpoints of exactly the objects in `D`.
+
+    `D` records which entries of `F` this derivation reads, and exists only so
+    that those reads are well defined (`KJ.deps_inFixPoint`).  It is *not* the
+    dependency set of the object under analysis — that is `σ.ADep`, which mirrors
+    `Proof.DepJ` and is governed by `ADepOk`.
+
+    Only `proj` (which reads `Fld` of every owner in the subexpression's `K`) and
+    `gproj` (which reads `GFld` of `G₀`) perform cross-object lookups — `app`
+    reads `σ.Ret`, i.e. the *current* object's table, matching `σ.Ret G p.2` in
+    the declarative `Proof.KJ`. -/
 inductive KJ {G : GlobName} (C : ClassName) (σ : State G) (L : Program) (F : FixPoints) :
     Expr → Set OPair → Set GlobName → Prop
   | thisE  : KJ C σ L F Expr.thisE (⋃ G' ∈ σ.This C, {(G', C)}) ∅
@@ -98,6 +133,8 @@ inductive KJ0 {G : GlobName} (σ : State G) (L : Program) (F : FixPoints) :
       KJ0 σ L F e₁ K₁ D₁ → KJ0 σ L F (Expr.app e₁ e₂) (⋃ p ∈ K₁, σ.Ret p.2) D₁
   | val {v} : KJ0 σ L F (Expr.val v) ∅ ∅
 
+/-- Every object a `KJ` derivation consults is already in the fixpoint map: the
+    lookups performed inside the derivation are well defined. -/
 theorem KJ.deps_inFixPoint {G : GlobName} {C : ClassName} {σ : State G} {L : Program}
     {F : FixPoints} {e : Expr} {K : Set OPair} {D : Set GlobName}
     (h : KJ C σ L F e K D) : ∀ G' ∈ D, InFixPoint F G' := by
@@ -161,6 +198,22 @@ theorem KJC.deps_inFixPoint {G : GlobName} {σ : State G} {L : Program} {F : Fix
   | none => exact KJ0.deps_inFixPoint h
   | some C => exact KJ.deps_inFixPoint h
 
+/-! ## `Needs`: the dual of `KJ`
+
+`KJ.proj` cannot even state its conclusion without `hK : ∀ p ∈ K, InFixPoint F p.1`,
+so "the derivation is blocked" is not expressible as a `KJ` premise.  `Needs` is
+the missing half: it names an object that must be solved before `e` can be
+abstracted at all. -/
+
+/-- `Needs σ L F c e G₀`: abstracting `e` requires reading `G₀`'s fixpoint, and
+    `F` does not have it yet.
+
+    The shape mirrors `KJ`: only `proj` (which reads `Fld` of every owner in its
+    subexpression's `K`) and `gproj` (which reads `GFld G₀`) consult `F`, and
+    `KJ.app` descends only into `e₁`.  Nothing is needed for `newC` or for the
+    argument of an application: `KJ` does not look at those subexpressions, and
+    they are reached separately by `RE`, which is closed under
+    `newC₁`/`newC₂`/`app₂`. -/
 inductive Needs {G : GlobName} (σ : State G) (L : Program) (F : FixPoints) :
     Ctx → Expr → GlobName → Prop
   | projOwner {c e i K D p} :
@@ -198,16 +251,23 @@ theorem kj_or_needs {G : GlobName} (σ : State G) (L : Program) (F : FixPoints)
           exact Or.inr ⟨p.1, Needs.projOwner (c := some C) h hp hnp⟩
       · exact Or.inr ⟨G₀, Needs.projSub h⟩
 
+/-! ## Stack and queue -/
+
+/-- The suspended analyses, innermost first. -/
 abbrev Stack := List ((G : GlobName) × State G)
 
+/-- The objects whose analysis is currently suspended. -/
 def Stack.globs (S : Stack) : List GlobName := S.map Sigma.fst
 
+/-- The objects not yet started. -/
 abbrev Queue := List GlobName
 
 def Queue.remove (Q : Queue) (G : GlobName) :=
 match Q with
 | [] => []
 | g::gs => if g == G then gs else g::(Queue.remove gs G)
+
+/-! ## Reachable expressions and the per-object fixpoint -/
 
 inductive RE (G : GlobName) (σ : State G) (L : Program) : Ctx → Expr → Prop
   | init₁ {e₁ e₂} : Program.HasObject L G e₁ e₂ → RE G σ L none e₁
@@ -239,6 +299,8 @@ structure FixPoint (G : GlobName) (σ : State G) (L : Program) (F : FixPoints)
       ∀ D ∈ classes K₁, K₂ ⊆ σ.Param D
   this_re : ∀ {G₀ c K₁ Dp₁ e₁ e₂}, RE G σ L c (Expr.app e₁ e₂) → KJC σ L F c e₁ K₁ Dp₁ →
       G₀ = objects K₁ → ∀ D ∈ classes K₁, G₀ ⊆ σ.This D
+
+/-! ### Monotone updates -/
 
 structure State.Sub {G : GlobName} (σ σ' : State G) : Prop where
   param : ∀ C, σ.Param C ⊆ σ'.Param C
@@ -332,11 +394,20 @@ def Stable (L : Program) (F : FixPoints) (G : GlobName) (σ : State G) : Prop :=
   (∀ σ', Grow L F G σ σ' → σ' ≤ σ) ∧
   (∀ c e G₀, RE G σ L c e → ¬ Needs σ L F c e G₀)
 
+/-- `σ.ADep` really is the set of objects `G` depends on.
+
+    The two clauses mirror `Proof.DepJ.direct` and `Proof.DepJ.trans` one for
+    one, which is what makes `dep_subset_adep` an induction on `DepJ` with
+    exactly these two cases.  Note that `ADep` is therefore *checked* here rather
+    than accumulated by `Solve`: the transition rules never touch it. -/
 structure ADepOk (G : GlobName) (σ : State G) (L : Program) (F : FixPoints) : Prop where
   direct : ∀ {c G₀ i}, RE G σ L c (Expr.gproj G₀ i) → G₀ ∈ σ.ADep
   trans : ∀ {G₀} (_ : G₀ ∈ σ.ADep) (h : InFixPoint F G₀),
       (F.lookup G₀ h).ADep ⊆ σ.ADep
 
+/-- Every owner pair stored in `σ`'s tables belongs either to `G` itself or to an
+    object `G` has already recorded as a dependency.  Together with `ADepOk` this
+    is what rules out *spurious* cycle reports: see `kj_owners`. -/
 structure OwnersOk (G : GlobName) (σ : State G) : Prop where
   param : ∀ {C p}, p ∈ σ.Param C → p.1 = G ∨ p.1 ∈ σ.ADep
   fld₁ : ∀ {C p}, p ∈ σ.Fld₁ C → p.1 = G ∨ p.1 ∈ σ.ADep
@@ -358,51 +429,75 @@ theorem OwnersOk.gfld {G : GlobName} {σ : State G} (h : OwnersOk G σ) {i : Idx
   · exact h.gfld₁ hp
   · exact h.gfld₂ hp
 
+/-- `G`'s analysis is finished: its state is a per-object fixpoint, its
+    dependency set is correct, and every object it depends on is solved. -/
 structure Done (G : GlobName) (σ : State G) (L : Program) (F : FixPoints) : Prop where
   solved : ∀ G' ∈ σ.ADep, InFixPoint F G'
   fixpoint : FixPoint G σ L F solved
   adep : ADepOk G σ L F
   owners : OwnersOk G σ
 
+/-! ## The scheduler -/
+
 inductive Config
+  /-- Analysing `G` with partial state `σ`; `S` is suspended, `Q` not yet started. -/
   | mk (G : GlobName) (σ : State G) (F : FixPoints) (S : Stack) (Q : Queue)
+  /-- Every object solved. -/
   | done (F : FixPoints)
+  /-- `G` was needed while its own analysis was suspended: an initialisation cycle. -/
   | cycle (G : GlobName)
   deriving Inhabited
 
+/-- `Solve` schedules objects; it computes nothing.  A step either suspends the
+    current object in favour of one it needs, reports a cycle, or closes the
+    current object — the last only if `Done` holds of it.
+
+    There is deliberately no rule for "the needed object is already solved": in
+    that case there is no `Needs`, hence no step, and the dependency is consumed
+    inside the `KJ` derivation itself. -/
 inductive Solve (L : Program) : Config → Config → Prop
-  | step {G : GlobName} {σ σ' : State G} {F : FixPoints} {S : Stack} {Q : Queue} :
-      Grow L F G σ σ' →
-      Solve L (.mk G σ F S Q) (.mk G σ' F S Q)
+  /-- `G`'s analysis reaches an expression needing the unsolved object `G₀`:
+      suspend `G` and start on `G₀`. -/
   | suspend {G G₀ : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
       {c : Ctx} {e : Expr} :
       RE G σ L c e → Needs σ L F c e G₀ →
       G₀ ≠ G → G₀ ∉ Stack.globs S →
       Solve L (.mk G σ F S Q)
               (.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀))
+  /-- The needed object is itself suspended (`G₀ = G` is the self-cycle). -/
   | cycle {G G₀ : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
       {c : Ctx} {e : Expr} :
       RE G σ L c e → Needs σ L F c e G₀ →
       (G₀ = G ∨ G₀ ∈ Stack.globs S) →
       Solve L (.mk G σ F S Q) (.cycle G₀)
+  /-- `G` is finished: publish it and resume the object below it on the stack. -/
   | resume {G G' : GlobName} {σ : State G} {σ' : State G'} {F : FixPoints}
       {S : Stack} {Q : Queue} :
       Stable L F G σ →
       Solve L (.mk G σ F (⟨G', σ'⟩ :: S) Q) (.mk G' σ' (F.insert G σ) S Q)
+  /-- `G` is finished and nothing is suspended: take the next object off the queue. -/
   | next {G G₀ : GlobName} {σ : State G} {F : FixPoints} {Q : Queue} :
       Stable L F G σ → ¬ InFixPoint F G₀ →
       Solve L (.mk G σ F List.nil (G₀ :: Q))
               (.mk G₀ (State.zero G₀) (F.insert G σ) List.nil Q)
+  /-- The head of the queue was already solved as somebody's dependency. -/
   | skip {G G₀ : GlobName} {σ : State G} {F : FixPoints} {Q : Queue} :
       InFixPoint F G₀ →
       Solve L (.mk G σ F List.nil (G₀ :: Q)) (.mk G σ F List.nil Q)
+  /-- Stack and queue both exhausted. -/
   | finish {G : GlobName} {σ : State G} {F : FixPoints} :
       Stable L F G σ →
       Solve L (.mk G σ F List.nil List.nil) (.done (F.insert G σ))
+  -- step
+  | step {G : GlobName} {σ σ' : State G} {F : FixPoints} {S : Stack} {Q : Queue} :
+      Grow L F G σ σ' →
+      Solve L (.mk G σ F S Q) (.mk G σ' F S Q)
 
+/-- Reflexive-transitive closure of `Solve`. -/
 abbrev Solve.Star (L : Program) : Config → Config → Prop :=
   Relation.ReflTransGen (Solve L)
 
+/-- The initial configuration for a program. -/
 def Config.start (L : Program) : Config :=
   let objects := L.GlobNames
   let G := objects.head (by
@@ -421,6 +516,10 @@ def Config.start (L : Program) : Config :=
 def Config.start1 (G : GlobName) (Q : Queue) : Config :=
   .mk G (State.zero G) (fun _ => none) List.nil Q
 
+/-! ## Back to the declarative side -/
+
+/-- Assemble the per-object tables into the single global `Sigma` of
+    `Analysis.lean`.  Unsolved objects contribute nothing. -/
 def FixPoints.glue (F : FixPoints) : Proof.Sigma where
   Param := fun G C => ((F G).map fun σ => σ.Param C).getD ∅
   Fld₁  := fun G C => ((F G).map fun σ => σ.Fld₁ C).getD ∅
@@ -474,18 +573,162 @@ theorem re_of_glue {L : Program} {F : FixPoints} {G : GlobName} {σ : State G}
   | app₁ _ ih => exact RE.app₁ ih
   | app₂ _ ih => exact RE.app₂ ih
 
+/-! ### Invariants of the fixpoint map -/
+
+/-- Every solved object has its dependency bookkeeping in order. -/
+def ADepClosed (L : Program) (F : FixPoints) : Prop :=
+  ∀ (G : GlobName) (σ : State G), F G = some σ →
+    (∀ G' ∈ σ.ADep, InFixPoint F G') ∧ ADepOk G σ L F
+
+/-- Every solved object's tables mention only itself and its dependencies. -/
+def OwnersClosed (L : Program) (F : FixPoints) : Prop :=
+  ∀ (G : GlobName) (σ : State G), F G = some σ → OwnersOk G σ ∧ ADepOk G σ L F
+
+theorem OwnersClosed.lookup {L : Program} {F : FixPoints} (hF : OwnersClosed L F)
+    {G : GlobName} (h : InFixPoint F G) :
+    OwnersOk G (F.lookup G h) ∧ ADepOk G (F.lookup G h) L F := by
+  obtain ⟨σ, hσ⟩ := h
+  rw [FixPoint.lookup_eq _ hσ]
+  exact hF G σ hσ
+
+/-- Every object in `F` was closed by a rule of `Solve`, so `Done` holds of it.
+    This is the invariant `solve_done_fixpoint` has to maintain. -/
+def AllDone (L : Program) (F : FixPoints) : Prop :=
+  ∀ (G : GlobName) (σ : State G), F G = some σ → Done G σ L F
+
+theorem AllDone.adepClosed {L : Program} {F : FixPoints} (h : AllDone L F) :
+    ADepClosed L F := fun G σ hσ => ⟨(h G σ hσ).solved, (h G σ hσ).adep⟩
+
+theorem AllDone.ownersClosed {L : Program} {F : FixPoints} (h : AllDone L F) :
+    OwnersClosed L F := fun G σ hσ => ⟨(h G σ hσ).owners, (h G σ hσ).adep⟩
+
+/-- **`ADep` over-approximates `Dep`.**  This is what connects the algorithm's
+    cycle test to `Proof.abstract_detects_cycle`: a declarative dependency of a
+    solved object is always recorded in its `ADep`. -/
+theorem dep_subset_ade1p {L : Program} {F : FixPoints} (hF : ADepClosed L F)
+    {G G₀ : GlobName} (h : Proof.DepJ F.glue L G G₀) :
+    ∀ σ : State G, F G = some σ → G₀ ∈ σ.ADep := by
+  induction h with
+  | direct hre =>
+      intro σ hσ
+      exact (hF _ σ hσ).2.direct (re_of_glue hσ hre)
+  | @trans G G' G₀ _ _ ih₁ ih₂ =>
+      intro σ hσ
+      have hG' : G' ∈ σ.ADep := ih₁ σ hσ
+      obtain ⟨σ', hσ'⟩ := (hF _ σ hσ).1 G' hG'
+      refine (hF _ σ hσ).2.trans hG' ⟨σ', hσ'⟩ ?_
+      rw [FixPoint.lookup_eq _ hσ']
+      exact ih₂ σ' hσ'
+
+/-- An owner drawn from a *solved* object `G₀` that `G` depends on is itself a
+    dependency of `G`. -/
+theorem adep_of_dep {L : Program} {F : FixPoints} {G : GlobName} {σ : State G}
+    (hA : ADepOk G σ L F) {G₀ : GlobName} (h₀ : InFixPoint F G₀) (hmem : G₀ ∈ σ.ADep)
+    {q : OPair} (hq : q.1 = G₀ ∨ q.1 ∈ (F.lookup G₀ h₀).ADep) :
+    q.1 ∈ σ.ADep := by
+  rcases hq with hq | hq
+  · exact hq ▸ hmem
+  · exact hA.trans hmem h₀ hq
+
+/-- **`ADep` does not over-approximate either: projection owners are already
+    dependencies.**  For an `RE`-reachable expression, every owner pair produced
+    by `KJ` belongs to `G` itself or to an object already in `σ.ADep`.  So
+    `Solve.suspend`/`Solve.cycle` firing on a `Needs.projOwner` — the case where
+    the missing object is not named by a `gproj` and hence is not a `DepJ` edge —
+    never reports a dependency `Dep` does not have. -/
+theorem kj_owners {L : Program} {F : FixPoints} {G : GlobName} {σ : State G}
+    {C : ClassName} {e : Expr} {K : Set OPair} {D : Set GlobName}
+    (hF : OwnersClosed L F) (hOw : OwnersOk G σ) (hA : ADepOk G σ L F)
+    (hGF : ¬ InFixPoint F G) (h : KJ C σ L F e K D) :
+    RE G σ L (some C) e → ∀ p ∈ K, p.1 = G ∨ p.1 ∈ σ.ADep := by
+  induction h with
+  | thisE =>
+      intro _ p hp
+      simp only [Set.mem_iUnion, Set.mem_singleton_iff] at hp
+      obtain ⟨G', hG', rfl⟩ := hp
+      exact hOw.this hG'
+  | paramE => intro _ p hp; exact hOw.param hp
+  | newC => rintro _ p rfl; exact Or.inl rfl
+  | val => intro _ p hp; simp at hp
+  | app _ _ =>
+      intro _ p hp
+      simp only [Set.mem_iUnion] at hp
+      obtain ⟨q, _, hp⟩ := hp
+      exact hOw.ret hp
+  | @gproj G₀ i hK =>
+      intro hre q hq
+      exact Or.inr (adep_of_dep hA hK (hA.direct hre) ((hF.lookup hK).1.gfld hq))
+  | @proj e' i K' D' hK _ ih =>
+      intro hre q hq
+      simp only [Set.mem_iUnion] at hq
+      obtain ⟨p, hpK, hq⟩ := hq
+      rcases ih (RE.proj hre) p hpK with hp | hp
+      · exact absurd (hp ▸ hK p hpK) hGF
+      · exact Or.inr (adep_of_dep hA (hK p hpK) hp ((hF.lookup (hK p hpK)).1.fld hq))
+
+theorem done_of_stable {L F G σ} (hOw : OwnersOk G σ) (hAd : ADepOk G σ L F)
+    (hsolved : ∀ G' ∈ σ.ADep, InFixPoint F G') (h : Stable L F G σ) : Done G σ L F :=
+    by sorry
+
+-- theorem solve_terminates in either .cycle or .done
+theorem solve_terminates {L : Program} {G G' : GlobName} {Q : Queue} {F : FixPoints} :
+(Solve.Star L (Config.start L) (.done F)) ∨ (Solve.Star L (Config.start L) (.cycle G')) := by
+-- if u start with an empty stack, start computing fix point. by kj or needs, you either have
+-- the needed G or u need some G'.
+-- in first case, nothing is needed from solve. In second case, you suspend or cycle
+-- if cycle, done
+-- else we do the same thing with the needed global object
+-- assume needed global object doesn't cycle (if it does, we are done), then we come
+-- back and look at this object that is on the stack.
+-- the stack and queue are finite, so it will reach the .done config
+sorry
+
+/-! ### From a declarative dependency cycle to a `Solve` cycle report
+
+`dep_subset_adep` says: if `G` depends on itself, then `Solve`, started on `G`,
+can reach `.cycle G`.  The run is the obvious one — follow the dependency edges,
+suspending at each one — and the only two things it needs are:
+
+* **a *simple* cycle through `G`.**  Following an arbitrary `Dep`-walk from `G`
+  back to `G` is not enough: if the walk revisits some intermediate object `A`,
+  the algorithm reports `.cycle A`, not `.cycle G`.  `exists_simple_cycle` below
+  shortcuts any closed walk at `G` — cutting out the loop between two
+  occurrences of a repeated vertex, which is strictly shortening and keeps `G`
+  as the basepoint — until no vertex repeats, so the only object already on the
+  stack when the walk closes is `G` itself.
+
+* **the edges must be visible to the algorithm.**  `Proof.Dep` is computed
+  against an *arbitrary* `σ : Proof.Sigma`, whereas every state `Solve` visits
+  after `Config.start1` is `State.zero` (no rule of `Solve` grows a state).  The
+  two agree on `Proof.RE.init₁/init₂/proj/newC₁/newC₂/app₁/app₂`, which never
+  look at `σ`, but not on `Proof.RE.body`, which needs `C ∈ σ.RM G`.  So a `σ`
+  with a fat `RM` can have `Dep`-edges buried in method bodies that the zero
+  state cannot reach, and the theorem is *false* without a hypothesis ruling
+  that out (take `G`'s two initialisers value-free and put the `G.i` inside the
+  body of a class `C ∈ σ.RM G`: `DepJ σ L G G` holds, yet no rule of `Solve`
+  applies to `Config.start1 G _` at all).  Hence the hypothesis `hRE`;
+  `re_zero_of_re_none` isolates the fragment on which it is automatic, and
+  `re_zero_of_re_of_rm_empty` discharges it outright. -/
+
+/-- A single `Proof.DepJ` edge: `G`'s reachable code contains `G₀.i`. -/
 def Edge (σ : Proof.Sigma) (L : Program) (G G₀ : GlobName) : Prop :=
   ∃ (c : Ctx) (i : Idx), Proof.RE σ L G c (Expr.gproj G₀ i)
 
-def AEdge (L : Program) (F : FixPoints) (G G₀ : GlobName) : Prop :=
-  ∃ (σ : State G) (c : Ctx) (i : Idx),
-    Relation.ReflTransGen (Grow L F G) (State.zero G) σ ∧ RE G σ L c (Expr.gproj G₀ i)
+/-- The same edge as the algorithm sees it: from the empty state, i.e. before
+    anything at all has been computed.  This is what `Solve.suspend` /
+    `Solve.cycle` fire on, since every state reachable from `Config.start1` is
+    a `State.zero`. -/
+def AEdge (L : Program) (G G₀ : GlobName) : Prop :=
+  ∃ (c : Ctx) (i : Idx), RE G (State.zero G) L c (Expr.gproj G₀ i)
 
+/-- `DepJ` is the transitive closure of `Edge`. -/
 theorem transGen_edge_of_depJ {σ : Proof.Sigma} {L : Program} {G G₀ : GlobName}
     (h : Proof.DepJ σ L G G₀) : Relation.TransGen (Edge σ L) G G₀ := by
   induction h with
   | @direct G G₀ c i hre => exact Relation.TransGen.single ⟨c, i, hre⟩
   | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
+
+/-! #### Extracting a simple cycle from a closed walk -/
 
 section Walks
 variable {α : Type*} {r : α → α → Prop}
@@ -501,6 +744,67 @@ theorem exists_walk_of_transGen {a b : α} (h : Relation.TransGen r a b) :
       have hcat : (l ++ [b]) ++ [c] = l ++ [b, c] := by simp
       rw [hcat]
       exact List.isChain_cons_append_cons_cons.2 ⟨hl, hbc, List.isChain_singleton c⟩
+
+-- /-- A list that is not `Nodup` splits around one of its repetitions. -/
+-- theorem not_nodup_decomp : ∀ {l : List α}, ¬ l.Nodup →
+--     ∃ (x : α) (s t u : List α), l = s ++ x :: (t ++ x :: u) := by
+--   intro l
+--   induction l with
+--   | nil => intro h; exact absurd List.nodup_nil h
+--   | cons b l ih =>
+--       intro h
+--       by_cases hl : l.Nodup
+--       · have hb : b ∈ l := by
+--           by_contra hb
+--           exact h (List.nodup_cons.2 ⟨hb, hl⟩)
+--         obtain ⟨t, u, rfl⟩ := List.append_of_mem hb
+--         exact ⟨b, [], t, u, by simp⟩
+--       · obtain ⟨x, s, t, u, rfl⟩ := ih hl
+--         exact ⟨x, b :: s, t, u, by simp⟩
+
+-- /-- Shortcutting: a closed walk at `a` of length `≤ n + 1` that repeats a vertex
+--     contains a strictly shorter closed walk at `a`.  Iterating gives a walk whose
+--     vertices are pairwise distinct. -/
+-- theorem exists_nodup_walk (a : α) : ∀ (n : ℕ) (l : List α), l.length ≤ n →
+--     List.IsChain r (a :: (l ++ [a])) →
+--     ∃ l' : List α, List.IsChain r (a :: (l' ++ [a])) ∧ (a :: l').Nodup := by
+--   intro n
+--   induction n with
+--   | zero =>
+--       intro l hlen hchain
+--       have hl : l = [] := List.eq_nil_of_length_eq_zero (Nat.le_zero.1 hlen)
+--       subst hl
+--       exact ⟨[], hchain, by simp⟩
+--   | succ n ih =>
+--       intro l hlen hchain
+--       by_cases hnd : (a :: l).Nodup
+--       · exact ⟨l, hchain, hnd⟩
+--       · by_cases ha : a ∈ l
+--         · -- `a` occurs again inside the walk: keep the prefix.
+--           obtain ⟨s, t, rfl⟩ := List.append_of_mem ha
+--           rw [show (s ++ a :: t) ++ [a] = s ++ a :: (t ++ [a]) by simp] at hchain
+--           have hlen' : s.length ≤ n := by
+--             simp only [List.length_append, List.length_cons] at hlen; omega
+--           exact ih s hlen' (List.isChain_cons_split.1 hchain).1
+--         · -- some other vertex occurs twice: cut out the loop between them.
+--           have hnd' : ¬ l.Nodup := fun hh => hnd (List.nodup_cons.2 ⟨ha, hh⟩)
+--           obtain ⟨x, s, t, u, rfl⟩ := not_nodup_decomp hnd'
+--           rw [show (s ++ x :: (t ++ x :: u)) ++ [a] = s ++ x :: (t ++ x :: (u ++ [a])) by simp]
+--             at hchain
+--           obtain ⟨hpre, hpost⟩ := List.isChain_cons_split.1 hchain
+--           have hsuf : List.IsChain r (x :: (u ++ [a])) := (List.isChain_cons_split.1 hpost).2
+--           have hlen' : (s ++ x :: u).length ≤ n := by
+--             simp only [List.length_append, List.length_cons] at hlen ⊢; omega
+--           refine ih (s ++ x :: u) hlen' ?_
+--           rw [show (s ++ x :: u) ++ [a] = s ++ x :: (u ++ [a]) by simp]
+--           exact List.isChain_cons_split.2 ⟨hpre, hsuf⟩
+
+-- /-- **A closed walk contains a simple cycle through its basepoint.**  Note the
+--     conclusion keeps the basepoint: shortcutting never leaves `a`. -/
+-- theorem exists_simple_cycle {a : α} (h : Relation.TransGen r a a) :
+--     ∃ l : List α, List.IsChain r (a :: (l ++ [a])) ∧ (a :: l).Nodup := by
+--   obtain ⟨l, hl⟩ := exists_walk_of_transGen h
+--   exact exists_nodup_walk a l.length l le_rfl hl
 
 /-- **The first repetition in a list.**  Scan `l` from the left with `v` holding
     the elements already seen: either nothing repeats, or the scan stops at the
@@ -559,17 +863,52 @@ theorem nodup_or_simple_cycle {a : α} (h : Relation.TransGen r a a) :
 
 end Walks
 
-/-- Growing the current object's state is a run of `Solve.step`s. -/
-theorem solve_star_of_grow {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
-    {S : Stack} {Q : Queue} (h : Relation.ReflTransGen (Grow L F G) σ σ') :
-    Solve.Star L (.mk G σ F S Q) (.mk G σ' F S Q) := by
-  induction h with
-  | refl => exact Relation.ReflTransGen.refl
-  | tail _ hgrow ih => exact ih.tail (Solve.step hgrow)
+/-! #### Transferring reachability to the states `Solve` actually visits -/
 
+/-- A derivation of `Proof.RE` in the *object* context cannot use `RE.body`
+    (that rule produces a `some C` context), and no other rule mentions `σ`.
+    So object-level reachability transfers to any algorithmic state. -/
+theorem re_zero_of_re_none {σ : Proof.Sigma} {L : Program} {G : GlobName} (σ' : State G)
+    {c : Ctx} {e : Expr} (h : Proof.RE σ L G c e) : c = none → RE G σ' L c e := by
+  induction h with
+  | init₁ ho => exact fun _ => RE.init₁ ho
+  | init₂ ho => exact fun _ => RE.init₂ ho
+  | body _ _ => exact fun hc => by simp at hc
+  | proj _ ih => exact fun hc => RE.proj (ih hc)
+  | newC₁ _ ih => exact fun hc => RE.newC₁ (ih hc)
+  | newC₂ _ ih => exact fun hc => RE.newC₂ (ih hc)
+  | app₁ _ ih => exact fun hc => RE.app₁ (ih hc)
+  | app₂ _ ih => exact fun hc => RE.app₂ (ih hc)
+
+/-- If no method is declaratively reachable either, then *all* of `σ`'s
+    reachability is visible to the algorithm from the empty state. -/
+theorem re_zero_of_re_of_rm_empty {σ : Proof.Sigma} {L : Program}
+    (hRM : ∀ G', σ.RM G' = ∅) (G : GlobName) (σ' : State G) {c : Ctx} {e : Expr}
+    (h : Proof.RE σ L G c e) : RE G σ' L c e := by
+  induction h with
+  | init₁ ho => exact RE.init₁ ho
+  | init₂ ho => exact RE.init₂ ho
+  | @body C _ hC _ => exact absurd (hRM G ▸ hC) (Set.notMem_empty C)
+  | proj _ ih => exact RE.proj ih
+  | newC₁ _ ih => exact RE.newC₁ ih
+  | newC₂ _ ih => exact RE.newC₂ ih
+  | app₁ _ ih => exact RE.app₁ ih
+  | app₂ _ ih => exact RE.app₂ ih
+
+/-! #### The run -/
+
+/-- **Walking a dependency chain with `Solve`.**  `H` is the object under
+    analysis and `l ++ [G]` the objects the chain still has to visit; `G` is
+    already suspended (or is `H` itself).  Each edge fires `Solve.suspend` —
+    legal because the chain's remaining objects are neither `H` nor on the
+    stack — and the last edge, whose target `G` *is* on the stack, fires
+    `Solve.cycle G`.
+
+    Nothing is ever solved along the way (`hF`), so every `Needs` obligation is
+    discharged by `Needs.gproj` and `F` never changes. -/
 theorem solve_cycle_of_walk {L : Program} {F : FixPoints} (hF : ∀ G', ¬ InFixPoint F G')
     {G : GlobName} : ∀ (l : List GlobName) (H : GlobName) (S : Stack) (Q : Queue),
-      List.IsChain (AEdge L F) (H :: (l ++ [G])) →
+      List.IsChain (AEdge L) (H :: (l ++ [G])) →
       (G = H ∨ G ∈ Stack.globs S) →
       (∀ x ∈ l, x ≠ H ∧ x ∉ Stack.globs S) → l.Nodup →
       Solve.Star L (.mk H (State.zero H) F S Q) (.cycle G) := by
@@ -577,20 +916,20 @@ theorem solve_cycle_of_walk {L : Program} {F : FixPoints} (hF : ∀ G', ¬ InFix
   induction l with
   | nil =>
       intro H S Q hchain hG _ _
-      obtain ⟨σ, c, i, hgrow, hre⟩ : AEdge L F H G := List.isChain_pair.1 (by simpa using hchain)
-      exact (solve_star_of_grow hgrow).tail (Solve.cycle hre (Needs.gproj (hF G)) hG)
+      obtain ⟨c, i, hre⟩ : AEdge L H G := List.isChain_pair.1 (by simpa using hchain)
+      exact Relation.ReflTransGen.single (Solve.cycle hre (Needs.gproj (hF G)) hG)
   | cons b l ih =>
       intro H S Q hchain hG hdisj hnd
       rw [List.cons_append, List.isChain_cons_cons] at hchain
-      obtain ⟨⟨σ, c, i, hgrow, hre⟩, hrest⟩ := hchain
+      obtain ⟨⟨c, i, hre⟩, hrest⟩ := hchain
       obtain ⟨hbH, hbS⟩ := hdisj b List.mem_cons_self
       obtain ⟨hbl, hndl⟩ := List.nodup_cons.1 hnd
-      have hstep : Solve L (.mk H σ F S Q)
-          (.mk b (State.zero b) F (⟨H, σ⟩ :: S) (Q.remove b)) :=
+      have hstep : Solve L (.mk H (State.zero H) F S Q)
+          (.mk b (State.zero b) F (⟨H, State.zero H⟩ :: S) (Q.remove b)) :=
         Solve.suspend hre (Needs.gproj (hF b)) hbH hbS
-      have hglobs : Stack.globs (⟨H, σ⟩ :: S) = H :: Stack.globs S := rfl
-      refine (solve_star_of_grow hgrow).trans (Relation.ReflTransGen.head hstep
-        (ih b (⟨H, σ⟩ :: S) (Q.remove b) hrest ?_ ?_ hndl))
+      have hglobs : Stack.globs (⟨H, State.zero H⟩ :: S) = H :: Stack.globs S := rfl
+      refine Relation.ReflTransGen.head hstep
+        (ih b (⟨H, State.zero H⟩ :: S) (Q.remove b) hrest ?_ ?_ hndl)
       · rcases hG with rfl | hG
         · exact Or.inr (hglobs ▸ List.mem_cons_self)
         · exact Or.inr (hglobs ▸ List.mem_cons_of_mem H hG)
@@ -600,9 +939,14 @@ theorem solve_cycle_of_walk {L : Program} {F : FixPoints} (hF : ∀ G', ¬ InFix
         rw [hglobs]
         simpa [hxH] using hxS
 
+/-- **Walking a chain with `Solve` without closing it.**  Every edge fires
+    `Solve.suspend`, legal because the objects walked through are pairwise
+    distinct (`hnd`) and none of them is suspended already (`hS`).  The run ends
+    on `b`, with `H` and all of `m` added to the stack — which is what the
+    caller needs to know to fire `Solve.cycle` later. -/
 theorem solve_walk_suspend {L : Program} {F : FixPoints} (hF : ∀ G', ¬ InFixPoint F G') :
     ∀ (m : List GlobName) (H b : GlobName) (S : Stack) (Q : Queue),
-      List.IsChain (AEdge L F) (H :: (m ++ [b])) →
+      List.IsChain (AEdge L) (H :: (m ++ [b])) →
       (H :: m).Nodup → (∀ x ∈ H :: m, x ∉ Stack.globs S) →
       b ∉ H :: m → b ∉ Stack.globs S →
       ∃ (S' : Stack) (Q' : Queue),
@@ -612,24 +956,24 @@ theorem solve_walk_suspend {L : Program} {F : FixPoints} (hF : ∀ G', ¬ InFixP
   induction m with
   | nil =>
       intro H b S Q hchain _ _ hbH hbS
-      obtain ⟨σ, c, i, hgrow, hre⟩ : AEdge L F H b := List.isChain_pair.1 (by simpa using hchain)
-      refine ⟨⟨H, σ⟩ :: S, Q.remove b, (solve_star_of_grow hgrow).tail
+      obtain ⟨c, i, hre⟩ : AEdge L H b := List.isChain_pair.1 (by simpa using hchain)
+      refine ⟨⟨H, State.zero H⟩ :: S, Q.remove b, Relation.ReflTransGen.single
         (Solve.suspend hre (Needs.gproj (hF b)) (by simpa using hbH) hbS), ?_⟩
       intro x
       simp [Stack.globs]
   | cons d m ih =>
       intro H b S Q hchain hnd hS hbH hbS
       rw [List.cons_append, List.isChain_cons_cons] at hchain
-      obtain ⟨⟨σ, c, i, hgrow, hre⟩, hrest⟩ := hchain
+      obtain ⟨⟨c, i, hre⟩, hrest⟩ := hchain
       obtain ⟨hHm, hndm⟩ := List.nodup_cons.1 hnd
-      have hglobs : Stack.globs (⟨H, σ⟩ :: S) = H :: Stack.globs S := rfl
-      have hstep : Solve L (.mk H σ F S Q)
-          (.mk d (State.zero d) F (⟨H, σ⟩ :: S) (Q.remove d)) :=
+      have hglobs : Stack.globs (⟨H, State.zero H⟩ :: S) = H :: Stack.globs S := rfl
+      have hstep : Solve L (.mk H (State.zero H) F S Q)
+          (.mk d (State.zero d) F (⟨H, State.zero H⟩ :: S) (Q.remove d)) :=
         Solve.suspend hre (Needs.gproj (hF d))
           (fun hdH => hHm (hdH ▸ List.mem_cons_self))
           (hS d (List.mem_cons_of_mem H List.mem_cons_self))
       obtain ⟨S', Q', hstar, hmem⟩ :=
-        ih d b (⟨H, σ⟩ :: S) (Q.remove d) hrest hndm
+        ih d b (⟨H, State.zero H⟩ :: S) (Q.remove d) hrest hndm
           (fun x hx => by
             rw [hglobs]
             simp only [List.mem_cons, not_or]
@@ -639,15 +983,20 @@ theorem solve_walk_suspend {L : Program} {F : FixPoints} (hF : ∀ G', ¬ InFixP
             rw [hglobs]
             simp only [List.mem_cons, not_or]
             exact ⟨fun hbH' => hbH (hbH' ▸ List.mem_cons_self), hbS⟩)
-      refine ⟨S', Q', (solve_star_of_grow hgrow).trans
-        (Relation.ReflTransGen.head hstep hstar), fun x => ?_⟩
+      refine ⟨S', Q', Relation.ReflTransGen.head hstep hstar, fun x => ?_⟩
       rw [hmem x, hglobs]
       simp only [List.mem_cons]
       tauto
 
+/-- **A cycle reachable from `G` is reported too.**  Walk the repetition-free
+    approach `m` from `G` to `b` (`solve_walk_suspend`), which leaves `b` under
+    analysis and `G :: m` on the stack, then walk `b`'s own simple cycle
+    (`solve_cycle_of_walk`): its closing edge finds `b` suspended and fires
+    `Solve.cycle b`.  The walk's tail `n` back to `G` is never travelled — the
+    algorithm stops as soon as the inner cycle closes. -/
 theorem solve_cycle_of_inner_walk {L : Program} {F : FixPoints}
     (hF : ∀ G', ¬ InFixPoint F G') {G b : GlobName} (m n l : List GlobName) (Q : Queue)
-    (hchain : List.IsChain (AEdge L F) (G :: (m ++ (((b :: (l ++ [b])) ++ n) ++ [G]))))
+    (hchain : List.IsChain (AEdge L) (G :: (m ++ (((b :: (l ++ [b])) ++ n) ++ [G]))))
     (hnd : (G :: (m ++ b :: l)).Nodup) :
     Solve.Star L (.mk G (State.zero G) F List.nil Q) (.cycle b) := by
   -- split the walk at the two occurrences of `b`: approach, cycle, and the
@@ -678,36 +1027,76 @@ theorem solve_cycle_of_inner_walk {L : Program} {F : FixPoints}
   exact ⟨fun hxG => hG (hxG ▸ List.mem_append_right _ (List.mem_cons_of_mem b hx)),
     fun hxm => hdisj hxm (List.mem_cons_of_mem b hx)⟩
 
-/-- If the declarative analysis detects a cycle from G to G, the algorithm
-    will detect a cycle. -/
-theorem algo_detects_dep {G : GlobName} {σ : Proof.Sigma} {L : Program}
+theorem hRE : ∀ (G' : GlobName) (c : Ctx) (e : Expr),
+      Proof.RE σ L G' c e → RE G' (State.zero G') L c e := sorry
+
+/-- **Every declarative dependency cycle is reported.**  Started on an object
+    that depends on itself, `Solve` can reach `.cycle G`: it follows a simple
+    `Dep`-cycle through `G`, suspending at each edge, until the edge back to `G`
+    finds `G` on its own stack.
+
+    `hRE` is what ties `Proof.Dep`'s `σ` to the states `Solve` visits: no rule of
+    `Solve` grows a state, so the run stays at `State.zero`, and a `σ` whose `RM`
+    makes method bodies reachable would carry `Dep`-edges the algorithm cannot
+    see.  It holds vacuously for object-level reachability
+    (`re_zero_of_re_none`) and, in general, whenever `σ.RM` is empty
+    (`re_zero_of_re_of_rm_empty`). -/
+theorem dep_subset_adep {G : GlobName} {σ : Proof.Sigma} {L : Program}
+    {Q : Queue} (_hQ : Q = L.GlobNames)
+
     (h : G ∈ Proof.Dep σ L G) :
-    ∃ G', Solve.Star L (Config.start L) (.cycle G') := by
-  sorry
+    ∃ G', Solve.Star L (Config.start1 G (Q.remove G)) (.cycle G') := by
+  -- the declarative cycle, as a cycle of edges the algorithm can fire on
+  have hT : Relation.TransGen (AEdge L) G G :=
+    (transGen_edge_of_depJ h).mono fun _ _ => fun ⟨c, i, hre⟩ => ⟨c, i, hRE _ c _ hre⟩
+  have hF : ∀ G', ¬ InFixPoint (fun _ => none) G' := by
+    rintro G' ⟨σ', hσ'⟩
+    simp at hσ'
+  rcases nodup_or_simple_cycle hT with ⟨l, hchain, hnd⟩ | ⟨m, n, l, b, hchain, hnd⟩
+  · -- the walk revisits nothing before returning to `G`: `G` itself is reported
+    obtain ⟨hGl, hndl⟩ := List.nodup_cons.1 hnd
+    exact ⟨G, solve_cycle_of_walk hF l G ([] : Stack) (Q.remove G) hchain (Or.inl rfl)
+      (fun x hx => ⟨fun hxG => hGl (hxG ▸ hx), by simp [Stack.globs]⟩) hndl⟩
+  · -- the walk closes a cycle at an interior `b` first: `b` is reported
+    exact ⟨b, solve_cycle_of_inner_walk hF m n l (Q.remove G) hchain hnd⟩
 
-/-- If there isn't a cycle, Solve terminates -/
-theorem solve_no_cycle_done {L : Program} {σ : Proof.Sigma}
-    (h : ∀ G, ¬ G ∈ Proof.Dep σ L G)
-    : ∃ F : FixPoints, Solve.Star L (Config.start L) (.done F) := by
-  sorry
+-- theorem algo_detects_dep {G : GlobName} {σ : Proof.Sigma} {L : Program}
+--     {Q : Queue} (_hQ : Q = L.GlobNames)
+--     (h : G ∈ Proof.Dep σ L G) :
+--     ∃ G', Solve.Star L (Config.start1 G (Q.remove G)) (.cycle G') := by
+--   -- the declarative cycle, as a cycle of edges the algorithm can fire on
+--   -- have hT : Relation.TransGen (AEdge L) G G :=
+--   --   (transGen_edge_of_depJ h).mono fun _ _ => fun ⟨c, i, hre⟩ => ⟨c, i, hRE _ c _ hre⟩
+--   -- have hF : ∀ G', ¬ InFixPoint (fun _ => none) G' := by
+--   --   rintro G' ⟨σ', hσ'⟩
+--   --   simp at hσ'
+--   -- rcases nodup_or_simple_cycle hT with ⟨l, hchain, hnd⟩ | ⟨m, n, l, b, hchain, hnd⟩
+--   -- · -- the walk revisits nothing before returning to `G`: `G` itself is reported
+--   --   obtain ⟨hGl, hndl⟩ := List.nodup_cons.1 hnd
+--   --   exact ⟨G, solve_cycle_of_walk hF l G ([] : Stack) (Q.remove G) hchain (Or.inl rfl)
+--   --     (fun x hx => ⟨fun hxG => hGl (hxG ▸ hx), by simp [Stack.globs]⟩) hndl⟩
+--   -- · -- the walk closes a cycle at an interior `b` first: `b` is reported
+--   --   exact ⟨b, solve_cycle_of_inner_walk hF m n l (Q.remove G) hchain hnd⟩
+--   sorry
 
-/-- If Solve terminates, there is a fixpoint  -/
-theorem solve_done_fixpoint {L : Program} {F : FixPoints} {σ : Proof.Sigma}
+
+-- otherwise, the thm below
+
+/-- **The obligation `Solve` exists to discharge.**  Reaching `done F` means the
+    glued state is a fixpoint in the sense of `Analysis.lean`, so every theorem
+    proved there — `abstract_detects_cycle` in particular — applies to the
+    algorithm's output.
+
+    What is still missing is the invariant carrying it: each `Done` in a closing
+    rule is established against the `F` current at that moment, whereas
+    `Proof.FixPoint` quantifies over the final `F`.  Bridging the two needs
+    monotonicity of `KJ`/`Calls` under `FixPoints.insert` (a derivation stays
+    valid, with the same `K`, when a further object is added) plus the invariant
+    that a closed object is never re-opened. -/
+theorem solve_done_fixpoint {L : Program} {G : GlobName} {Q : Queue} {F : FixPoints}
     (h : Solve.Star L (Config.start L) (.done F)) : Proof.FixPoint F.glue L := by
   sorry
 
-/-- solve either terminates in a cycle or gives a fix point --/
-theorem solve_terminates {L : Program} :
-(∃ F : FixPoints, Proof.FixPoint F.glue L) ∨
-  (∃ G' : GlobName, Solve.Star L (Config.start L) (.cycle G')) := by
--- if u start with an empty stack, start computing fix point. by kj or needs, you either have
--- the needed G or u need some G'.
--- in first case, nothing is needed from solve. In second case, you suspend or cycle
--- if cycle, done
--- else we do the same thing with the needed global object
--- assume needed global object doesn't cycle (if it does, we are done), then we come
--- back and look at this object that is on the stack.
--- the stack and queue are finite, so it will reach the .done config
-sorry
+-- final theorem: algo terminates and if runtime crashes, algo detects it.
 
 end Algorithm
