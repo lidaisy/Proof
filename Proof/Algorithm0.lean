@@ -498,18 +498,9 @@ abbrev Solve.Star (L : Program) : Config → Config → Prop :=
   Relation.ReflTransGen (Solve L)
 
 /-- The initial configuration for a program. -/
-def Config.start (L : Program) : Config :=
+def Config.start (L : Program) (hL : L.HasMain) : Config :=
   let objects := L.GlobNames
-  let G := objects.head (by
-    show L.GlobNames ≠ []
-    have hmem : Proof.Def.obj ⟨"", .thisE, .val .btrue⟩ ∈ L :=
-      Program.HasMain (Gₘ := "") (e := .thisE)
-    induction L with
-    | nil => cases hmem
-    | cons d ds ih =>
-        rcases List.mem_cons.1 hmem with rfl | h
-        · simp [Program.GlobNames]
-        · cases d <;> simp [Program.GlobNames, ih h])
+  let G := objects.head hL
   let Q := objects.tail
   .mk G (State.zero G) (fun _ => none) List.nil Q
 
@@ -671,8 +662,10 @@ theorem done_of_stable {L F G σ} (hOw : OwnersOk G σ) (hAd : ADepOk G σ L F)
     by sorry
 
 -- theorem solve_terminates in either .cycle or .done
-theorem solve_terminates {L : Program} {G G' : GlobName} {Q : Queue} {F : FixPoints} :
-(Solve.Star L (Config.start L) (.done F)) ∨ (Solve.Star L (Config.start L) (.cycle G')) := by
+theorem solve_terminates {L : Program} {G G' : GlobName} {Q : Queue} {F : FixPoints}
+    (hL : L.HasMain) :
+(Solve.Star L (Config.start L hL) (.done F)) ∨
+  (Solve.Star L (Config.start L hL) (.cycle G')) := by
 -- if u start with an empty stack, start computing fix point. by kj or needs, you either have
 -- the needed G or u need some G'.
 -- in first case, nothing is needed from solve. In second case, you suspend or cycle
@@ -1094,7 +1087,8 @@ theorem dep_subset_adep {G : GlobName} {σ : Proof.Sigma} {L : Program}
     valid, with the same `K`, when a further object is added) plus the invariant
     that a closed object is never re-opened. -/
 theorem solve_done_fixpoint {L : Program} {G : GlobName} {Q : Queue} {F : FixPoints}
-    (h : Solve.Star L (Config.start L) (.done F)) : Proof.FixPoint F.glue L := by
+    {hL : L.HasMain}
+    (h : Solve.Star L (Config.start L hL) (.done F)) : Proof.FixPoint F.glue L := by
   sorry
 
 -- final theorem: algo terminates and if runtime crashes, algo detects it.

@@ -94,8 +94,41 @@ def GlobNames (L : Program) : List GlobName :=
                 | Def.cls _ => GlobNames ds
                 | Def.obj o => o.name :: GlobNames ds
 
-axiom HasMain {L : Program} {Gₘ : GlobName} {e : Expr} :
-  L.HasObject Gₘ e (Expr.val Value.btrue)
+/-- `L.HasMain`: the program defines at least one object, so a run has an
+    object to start with.  This is a *well-formedness hypothesis* on `L`, to be
+    discharged (or assumed) at each theorem that mentions `Config.start`.
+
+    It replaces the former `axiom HasMain {L Gₘ e} : L.HasObject Gₘ e btrue`,
+    which was unsound in two separate ways.  It was outright inconsistent —
+    instantiating it at `L := []` gives `Def.obj _ ∈ []`, hence `False` — and
+    even read charitably it asserted that *every* program contains an object of
+    *every* name with *any* first initialiser, which hands `Analysis.RE.init₁`
+    an arbitrary expression and so makes vacuous any soundness statement that
+    consumes an `RE` derivation. -/
+def HasMain (L : Program) : Prop := L.GlobNames ≠ []
+
+/-- The intended way to supply `HasMain`: exhibit the main object. -/
+theorem HasMain.of_hasObject {L : Program} {G : GlobName} {e₁ e₂ : Expr}
+    (h : L.HasObject G e₁ e₂) : L.HasMain := by
+  show L.GlobNames ≠ []
+  induction L with
+  | nil => cases h
+  | cons d ds ih =>
+      rcases List.mem_cons.1 h with rfl | h'
+      · simp [GlobNames]
+      · cases d <;> simp [GlobNames, ih h']
+
+/-- `HasMain` says exactly that there is an object definition. -/
+theorem HasMain.exists_hasObject {L : Program} (h : L.HasMain) :
+    ∃ G e₁ e₂, L.HasObject G e₁ e₂ := by
+  induction L with
+  | nil => exact absurd rfl h
+  | cons d ds ih =>
+      match d with
+      | Def.cls c =>
+          obtain ⟨G, e₁, e₂, hmem⟩ := ih (by simpa [GlobNames] using h)
+          exact ⟨G, e₁, e₂, List.mem_cons_of_mem _ hmem⟩
+      | Def.obj o => exact ⟨o.name, o.init₁, o.init₂, List.mem_cons_self ..⟩
 
 end Program
 
