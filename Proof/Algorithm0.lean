@@ -21,7 +21,7 @@ import Mathlib.Data.List.Nodup
   particular `σ.ADep` is not accumulated by the transition rules — see `ADepOk`.
 -/
 
-namespace Algorithm
+namespace Algorithm0
 
 open Proof (GlobName ClassName OPair Idx Program Expr classes objects)
 
@@ -1093,4 +1093,4 @@ theorem solve_done_fixpoint {L : Program} {G : GlobName} {Q : Queue} {F : FixPoi
 
 -- final theorem: algo terminates and if runtime crashes, algo detects it.
 
-end Algorithm
+end Algorithm0

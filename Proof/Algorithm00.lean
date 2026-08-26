@@ -6,7 +6,7 @@ import Mathlib.Logic.Relation
 import Mathlib.Data.List.Chain
 import Mathlib.Data.List.Nodup
 
-namespace Algorithm
+namespace Algorithm00
 
 open Proof (GlobName ClassName OPair Idx Program Expr classes objects)
 
@@ -665,6 +665,29 @@ theorem first_dup : ∀ (l v : List α), v.Nodup →
         · exact Or.inl (by simpa using hnd)
         · exact Or.inr ⟨c :: p, q, b, rfl, by simpa using hnd, by simpa using hmem⟩
 
+/-- **The first element of `l` satisfying `p`.**  Either `p` holds nowhere on
+    `l`, or `l` splits as `m ++ x :: r` with `p x` and `p` failing everywhere on
+    the prefix `m` — the split a run needs when it must walk `m` unimpeded before
+    stopping at `x`. -/
+theorem first_sat {p : α → Prop} : ∀ l : List α,
+    (∀ x ∈ l, ¬ p x) ∨
+    ∃ (m r : List α) (x : α), l = m ++ x :: r ∧ p x ∧ ∀ y ∈ m, ¬ p y := by
+  intro l
+  induction l with
+  | nil => exact Or.inl (by simp)
+  | cons c l ih =>
+      by_cases hc : p c
+      · exact Or.inr ⟨[], l, c, rfl, hc, by simp⟩
+      · rcases ih with hnone | ⟨m, r, x, rfl, hx, hm⟩
+        · refine Or.inl fun y hy => ?_
+          rcases List.mem_cons.1 hy with rfl | hy'
+          · exact hc
+          · exact hnone y hy'
+        · refine Or.inr ⟨c :: m, r, x, rfl, hx, fun y hy => ?_⟩
+          rcases List.mem_cons.1 hy with rfl | hy'
+          · exact hc
+          · exact hm y hy'
+
 /-- **Every closed walk contains a simple cycle** — either through its basepoint,
     or through the first vertex the walk revisits.  Scanning `a`'s walk and
     stopping at the first repetition `b` leaves a repetition-free approach
@@ -747,11 +770,46 @@ theorem solve_cycle_of_walk {L : Program} {F : FixPoints}
         rw [hglobs]
         simpa [hxH] using hxS
 
+/-- **A walk that runs into the stack reports a cycle there.**  Nothing stops the
+    run that reaches `G` from already holding some vertex of `G`'s walk suspended
+    on its stack — and it need not be stopped: the run then simply never gets as
+    far as closing its own cycle.  It suspends along the walk up to the *first*
+    vertex `x` that is on the stack, where `Solve.cycle` fires instead of
+    `Solve.suspend`, and reports `x`.
+
+    This is what lets the callers below assume their walk avoids the stack: in
+    the alternative they already have the cycle they were after, just at another
+    object — which is why the conclusion, like `algo_detects_dep`'s, is `∃ G'`.
+    Picking the first hit is what keeps the prefix `p` stack-free, so that the
+    run really does reach `x`. -/
+theorem solve_cycle_of_stack_hit {L : Program} {F : FixPoints} {G z : GlobName}
+    (w : List GlobName) (S : Stack) (Q : Queue)
+    (hF : ∀ G' ∈ G :: (w ++ [z]), ¬ InFixPoint F G')
+    (hchain : List.IsChain (AEdge L F) (G :: (w ++ [z])))
+    (hnd : (G :: w).Nodup)
+    (hhit : ∃ x ∈ w, x ∈ Stack.globs S) :
+    ∃ G', Solve.Star L (.mk G (State.zero G) F S Q) (.cycle G') := by
+  obtain ⟨hGw, hwnd⟩ := List.nodup_cons.1 hnd
+  rcases first_sat (p := fun x => x ∈ Stack.globs S) w with hfree | ⟨p, q, x, rfl, hxS, hp⟩
+  · obtain ⟨y, hy, hyS⟩ := hhit
+    exact absurd hyS (hfree y hy)
+  -- everything strictly before `x` is off the stack, so the run suspends its way
+  -- along `p` and fires `Solve.cycle` on the edge into `x`
+  rw [show ((p ++ x :: q) ++ [z]) = p ++ x :: (q ++ [z]) by simp] at hchain
+  refine ⟨x, solve_cycle_of_walk p G S Q (fun y hy => hF y ?_)
+    (List.isChain_cons_split.1 hchain).1 (Or.inr hxS)
+    (fun y hy => ⟨fun hyG => hGw (hyG ▸ List.mem_append_left _ hy), hp y hy⟩)
+    (List.Nodup.of_append_left hwnd)⟩
+  simp only [List.mem_cons, List.mem_append] at hy ⊢
+  tauto
+
 theorem solve_walk_suspend {L : Program} {F : FixPoints} :
     ∀ (m : List GlobName) (H b : GlobName) (S : Stack) (Q : Queue),
       (∀ G' ∈ m ++ [b], ¬ InFixPoint F G') →
       List.IsChain (AEdge L F) (H :: (m ++ [b])) →
-      (H :: m).Nodup → (∀ x ∈ H :: m, x ∉ Stack.globs S) →
+      -- only the objects the run suspends *onto* must be off the stack; `H`, which
+      -- it starts at and merely pushes, may be on it already
+      (H :: m).Nodup → (∀ x ∈ m, x ∉ Stack.globs S) →
       b ∉ H :: m → b ∉ Stack.globs S →
       ∃ (S' : Stack) (Q' : Queue),
         Solve.Star L (.mk H (State.zero H) F S Q) (.mk b (State.zero b) F S' Q') ∧
@@ -775,14 +833,15 @@ theorem solve_walk_suspend {L : Program} {F : FixPoints} :
           (.mk d (State.zero d) F (⟨H, σ⟩ :: S) (Q.remove d)) :=
         Solve.suspend hre (Needs.gproj (hF d (by simp)))
           (fun hdH => hHm (hdH ▸ List.mem_cons_self))
-          (hS d (List.mem_cons_of_mem H List.mem_cons_self))
+          (hS d List.mem_cons_self)
       obtain ⟨S', Q', hstar, hmem⟩ :=
         ih d b (⟨H, σ⟩ :: S) (Q.remove d)
           (fun x hx => hF x (List.mem_cons_of_mem d hx)) hrest hndm
           (fun x hx => by
             rw [hglobs]
             simp only [List.mem_cons, not_or]
-            exact ⟨fun hxH => hHm (hxH ▸ hx), hS x (List.mem_cons_of_mem H hx)⟩)
+            exact ⟨fun hxH => hHm (hxH ▸ List.mem_cons_of_mem d hx),
+              hS x (List.mem_cons_of_mem d hx)⟩)
           (fun hb => hbH (List.mem_cons_of_mem H hb))
           (by
             rw [hglobs]
@@ -795,11 +854,12 @@ theorem solve_walk_suspend {L : Program} {F : FixPoints} :
       tauto
 
 theorem solve_cycle_of_inner_walk {L : Program} {F : FixPoints}
-    {G b : GlobName} (m n l : List GlobName) (Q : Queue)
+    {G b : GlobName} (m n l : List GlobName) (S : Stack) (Q : Queue)
     (hF : ∀ G' ∈ m ++ b :: l, ¬ InFixPoint F G')
     (hchain : List.IsChain (AEdge L F) (G :: (m ++ (((b :: (l ++ [b])) ++ n) ++ [G]))))
-    (hnd : (G :: (m ++ b :: l)).Nodup) :
-    Solve.Star L (.mk G (State.zero G) F List.nil Q) (.cycle b) := by
+    (hnd : (G :: (m ++ b :: l)).Nodup)
+    (hS : ∀ x ∈ m ++ b :: l, x ∉ Stack.globs S) :
+    Solve.Star L (.mk G (State.zero G) F S Q) (.cycle b) := by
   -- split the walk at the two occurrences of `b`: approach, cycle, and the
   -- unused tail back to `G`
   rw [show (m ++ (((b :: (l ++ [b])) ++ n) ++ [G])) = (m ++ b :: l) ++ b :: (n ++ [G])
@@ -812,17 +872,17 @@ theorem solve_cycle_of_inner_walk {L : Program} {F : FixPoints}
   obtain ⟨hm, hbl, hdisj⟩ := List.nodup_append'.1 hrest
   obtain ⟨hbl', hlnd⟩ := List.nodup_cons.1 hbl
   obtain ⟨S', Q', hstar, hmemS⟩ :=
-    solve_walk_suspend m G b List.nil Q
+    solve_walk_suspend m G b S Q
       (fun x hx => hF x (by
         simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx ⊢
         tauto)) happ
       (List.nodup_cons.2 ⟨fun hGm => hG (List.mem_append_left _ hGm), hm⟩)
-      (by simp [Stack.globs])
+      (fun x hx => hS x (List.mem_append_left _ hx))
       (by
         simp only [List.mem_cons, not_or]
         exact ⟨fun hbG => hG (hbG ▸ List.mem_append_right _ List.mem_cons_self),
           fun hbm => hdisj hbm List.mem_cons_self⟩)
-      (by simp [Stack.globs])
+      (hS b (List.mem_append_right _ List.mem_cons_self))
   refine hstar.trans
     (solve_cycle_of_walk l b S' Q'
       (fun x hx => hF x (by
@@ -831,40 +891,27 @@ theorem solve_cycle_of_inner_walk {L : Program} {F : FixPoints}
       hcyc (Or.inl rfl) ?_ hlnd)
   intro x hx
   refine ⟨fun hxb => hbl' (hxb ▸ hx), ?_⟩
+  have hxml : x ∈ m ++ b :: l := List.mem_append_right _ (List.mem_cons_of_mem b hx)
   rw [hmemS x]
-  simp only [Stack.globs, List.map_nil, List.not_mem_nil, or_false, List.mem_cons, not_or]
-  exact ⟨fun hxG => hG (hxG ▸ List.mem_append_right _ (List.mem_cons_of_mem b hx)),
-    fun hxm => hdisj hxm (List.mem_cons_of_mem b hx)⟩
+  simp only [List.mem_cons, not_or]
+  exact ⟨⟨fun hxG => hG (hxG ▸ hxml), fun hxm => hdisj hxm (List.mem_cons_of_mem b hx)⟩,
+    hS x hxml⟩
 
 /-- **If the declarative analysis detects a cycle from `G` to `G`, the algorithm
-    will detect a cycle.**  Reaching `G`'s own start configuration, `Solve`
-    follows a simple `Dep`-cycle, suspending at each edge, until the edge that
-    closes the cycle finds its target already on the stack.
+    will detect a cycle.**
 
-    Four ingredients, in the order the proof uses them:
+    * L = [ class C { G.1 },        -- never instantiated, never called
+      object G { true, true } ]
 
-    * `transGen_edge_of_depJ` turns `G ∈ Dep σ L G` into a closed *walk* of
-      `Edge`s, and `Trans_Edge_to_Trans_AEdge_gen` turns that into a closed walk
-      of `AEdge`s — edges the algorithm itself can fire on.  That step needs
-      `hRM`, and it is the one that may escape through the left disjunct, i.e.
-      report a cycle somewhere else entirely; see `re_to_grow_re` for why some
-      such hypothesis is unavoidable, and note that it must range over *every*
-      object the walk passes through, not just `G`.
+      Declaratively, with σ_top: "C" ∈ σ_top.RM G = univ and L.HasClass "C" (gproj G one),
+      so RE.body gives Proof.RE σ_top L G (some "C") (gproj G one), so DepJ.direct gives
+      G ∈ Dep σ_top L G. The hypothesis h of algo_detects_dep holds, and
+      σ_top is a genuine Proof.FixPoint.
 
-    * `nodup_or_simple_cycle` cuts a *simple* cycle out of the closed walk.  An
-      arbitrary walk will not do: if it revisits an interior object `b`, the run
-      reports `.cycle b`, not `.cycle G` — which is exactly why the conclusion
-      is `∃ G'` and not `.cycle G`.
-
-    * `hF` is what lets `Needs.gproj` fire at every vertex: an object already in
-      the fixpoint map is one `Solve` would `skip`, never suspend on.  It is
-      needed only along the cycle, so it is asked for only there — of the
-      objects `G` can reach by `AEdge`.  Demanding it of *every* object would
-      make the theorem vacuous in combination with `hstart`: `next` and `resume`
-      both write `F.insert`, and `skip` needs an entry to fire at all, so an
-      everywhere-empty `F` would force `hstart` to be `.refl`.
-      `reflTransGen_of_mem_isChain` is what turns "on the walk" into "reachable",
-      at each of the two shapes `nodup_or_simple_cycle` can hand back.
+      Algorithmically: G's initializers are true/true. Nothing calls anything, so
+      Grow adds nothing, Needs never fires, G is Stable immediately and the run
+      reaches .done. No .cycle configuration is reachable at all, so the conclusion
+      ∃ G', Solve.Star L (Config.start L hL) (.cycle G') is false.
 
     * `hstart` connects `Config.start L hL`, which begins at the head of
       `L.GlobNames`, to `G`'s own start configuration.  It is `.refl` when `G`
@@ -873,8 +920,8 @@ theorem solve_cycle_of_inner_walk {L : Program} {F : FixPoints}
       that object is `Stable`, so reaching `G` from an unrelated start is a
       termination fact, not a reachability one. -/
 theorem algo_detects_dep {G : GlobName} {σ : Proof.Sigma} {L : Program}
-    {F : FixPoints} {Q : Queue} (hL : L.HasMain)
-    (hstart : Solve.Star L (Config.start L hL) (.mk G (State.zero G) F List.nil Q))
+    {F : FixPoints} {Q : Queue} {S : Stack} (hL : L.HasMain)
+    (hstart : Solve.Star L (Config.start L hL) (.mk G (State.zero G) F S Q))
     (hF : ∀ H : GlobName, Relation.ReflTransGen (AEdge L F) G H → ¬ InFixPoint F H)
     (hRM : ∀ H : GlobName, ∀ C ∈ σ.RM H,
       (∃ G', Solve.Star L (Config.start L hL) (.cycle G')) ∨
@@ -886,36 +933,39 @@ theorem algo_detects_dep {G : GlobName} {σ : Proof.Sigma} {L : Program}
   rcases Trans_Edge_to_Trans_AEdge_gen hRM hEdge with hcycle | hAEChain
   · exact hcycle
   rcases nodup_or_simple_cycle hAEChain with ⟨l, hchain, hnd⟩ | ⟨m, n, l, b, hchain, hnd⟩
-  · -- the walk revisits nothing before returning to `G`: `G` itself is reported
-    obtain ⟨hGl, hndl⟩ := List.nodup_cons.1 hnd
+  · -- the walk revisits nothing before returning to `G`: `G` itself is reported,
+    -- unless the run had already walked into an object still on its stack
     have hreach := reflTransGen_of_mem_isChain _ _ hchain
-    exact ⟨G, hstart.trans (solve_cycle_of_walk l G ([] : Stack) Q
-      (fun x hx => hF x (hreach x hx)) hchain
-      (Or.inl rfl) (fun x hx => ⟨fun hxG => hGl (hxG ▸ hx), by simp [Stack.globs]⟩) hndl)⟩
+    have hF' : ∀ G' ∈ G :: (l ++ [G]), ¬ InFixPoint F G' := fun x hx => hF x (hreach x hx)
+    by_cases hhit : ∃ x ∈ l, x ∈ Stack.globs S
+    · obtain ⟨G', hcycle⟩ := solve_cycle_of_stack_hit l S Q hF' hchain hnd hhit
+      exact ⟨G', hstart.trans hcycle⟩
+    · push Not at hhit
+      obtain ⟨hGl, hndl⟩ := List.nodup_cons.1 hnd
+      exact ⟨G, hstart.trans (solve_cycle_of_walk l G S Q hF' hchain
+        (Or.inl rfl) (fun x hx => ⟨fun hxG => hGl (hxG ▸ hx), hhit x hx⟩) hndl)⟩
   · -- the walk closes a cycle at an interior `b` first: `b` is reported
     -- `hF` is needed on the approach `m` and the cycle `b :: l`, both of which
     -- the walk passes through before its unused tail `n` back to `G`
     have hreach := reflTransGen_of_mem_isChain _ _ hchain
-    refine ⟨b, hstart.trans (solve_cycle_of_inner_walk m n l Q (fun x hx => hF x (hreach x ?_))
-      hchain hnd)⟩
-    simp only [List.mem_append, List.mem_cons] at hx ⊢
-    tauto
+    by_cases hhit : ∃ x ∈ m ++ b :: l, x ∈ Stack.globs S
+    · -- the same escape as above, on the walk up to the closing `b`
+      have hpre : List.IsChain (AEdge L F) (G :: ((m ++ b :: l) ++ [b])) := by
+        rw [show (m ++ (((b :: (l ++ [b])) ++ n) ++ [G])) = (m ++ b :: l) ++ b :: (n ++ [G])
+          by simp] at hchain
+        exact (List.isChain_cons_split.1 hchain).1
+      obtain ⟨G', hcycle⟩ := solve_cycle_of_stack_hit (m ++ b :: l) S Q
+        (fun x hx => hF x (hreach x (by
+          simp only [List.mem_cons, List.mem_append] at hx ⊢
+          tauto))) hpre hnd hhit
+      exact ⟨G', hstart.trans hcycle⟩
+    · push Not at hhit
+      refine ⟨b, hstart.trans (solve_cycle_of_inner_walk m n l S Q
+        (fun x hx => hF x (hreach x ?_)) hchain hnd hhit)⟩
+      simp only [List.mem_append, List.mem_cons] at hx ⊢
+      tauto
 
-/-! ### The stack is a dependency chain
-
-`algo_detects_dep` is the completeness direction: every declarative cycle is
-reported.  What follows is the converse — `Solve` never reports a cycle that
-`Dep` does not have — and all of it rests on one invariant of the run:
-
-> every object on the stack depends on the object suspended just above it, and
-> the innermost one depends on the object currently being solved.
-
-`Solve.suspend` is the only rule that pushes, and it pushes exactly when the
-object under analysis `Needs` another one, which is what makes each link of the
-chain; `resume`/`next`/`skip` only pop or restart, so they can only shorten it.
-When `Solve.cycle` finally fires, its target `G₀` is either the current object
-— a self-dependency outright — or an object on the stack, which by the chain
-the current object is depended on by; either way `G₀ ∈ Dep G₀`. -/
+/-! ### The stack is a dependency chain -/
 
 /-- `NeedsDep σ L c`: whatever the configuration `c` may suspend on is a
     declarative dependency of the object `c` is solving. -/
@@ -982,30 +1032,20 @@ theorem needs_dep_step {σ : Proof.Sigma} {L : Program} {c c' : Config}
     (hstep : Solve L c c') (h : NeedsDep σ L c) :
     NeedsDep σ L c' := by
   cases hstep with
-  | step _ => sorry
-  | @suspend G G₀ σₐ F S Q cx e hre hneeds _ _ => sorry
+  | @step G σ σ' F S Q hgrow =>
+    -- cases hgrow
+    -- for each case, Needs is false
+    sorry
+  | @suspend G G₀ σₐ F S Q cx e hre hneeds _ _ =>
+
+    sorry
   | cycle _ => trivial
   | resume _ => sorry
   | next _ _ => sorry
   | skip _ => exact h
   | finish _ => trivial
 
-/-! #### `NeedsDep` at the start
-
-The starting configuration is the one case where `NeedsDep` can be discharged
-outright, because both of its components are empty:
-
-* `F = fun _ => none`, so `InFixPoint F` is uninhabited, and
-* the state is `State.zero G`, so `RM = ∅` and every abstract set is `∅`.
-
-Emptiness of `F` kills `Needs.gproj`'s side condition (it always fires) but also
-kills `KJ.gproj`, and emptiness of the state makes every `KJ` judgement produce
-only pairs owned by `G` itself — the only non-empty source is `KJ.newC`, whose
-pair is `(G, D)`.  So `Needs.projOwner`, which demands an owner `≠ G`, cannot
-fire at all, and the remaining `Needs` rules bottom out at a `gproj`, which is a
-`DepJ.direct` edge.  Emptiness of `RM` is what lets the `RE` of the algorithm be
-read back as a `Proof.RE` with no hypothesis about `σ` (contrast
-`re_to_grow_re`, where `RE.body` is exactly the rule that needs one). -/
+/-! #### `NeedsDep` at the start -/
 
 theorem not_inFixPoint_none {G : GlobName} : ¬ InFixPoint (fun _ => none) G := by
   rintro ⟨σ, hσ⟩
@@ -1097,32 +1137,97 @@ theorem solve_dep_star {σ : Proof.Sigma} {L : Program} {c : Config} {hL : L.Has
   | tail hb hstep ih => exact solve_dep_step (needs_dep hb) hstep ih
 
 /-- The algorithm reports no cycle that the analysis does not have. -/
-theorem no_dep_no_reachable_obj_on_stack {σ : Proof.Sigma} {L : Program} {hL : L.HasMain}
+theorem no_dep_no_cycle {σ : Proof.Sigma} {L : Program} {hL : L.HasMain}
     (h : ∀ G, ¬ G ∈ Proof.Dep σ L G)
     : ¬(∃ G' : GlobName, Solve.Star L (Config.start L hL) (.cycle G')) := by
   rintro ⟨G', hstar⟩
   exact h G' (solve_dep_star hstar)
 
+/-! ### Termination -/
+
+/-- **Progress**: no configuration of the solver is stuck.
+
+    The case analysis is the algorithm's own: a `Stable` object is popped off
+    the stack (`resume`), or the queue is advanced (`skip` / `next`), or — with
+    both empty — the run is `finish`ed; an unstable object either `Grow`s
+    (`step`) or `Needs` some `G₀`, which is `suspend`ed on unless it is the
+    object under analysis or already on the stack, in which case a cycle is
+    reported. -/
+theorem solve_progress {L : Program} {G : GlobName} {σ : State G} {F : FixPoints}
+    {S : Stack} {Q : Queue} : ∃ c', Solve L (.mk G σ F S Q) c' := by
+  by_cases hst : Stable L F G σ
+  · cases S with
+    | cons fr S' =>
+        obtain ⟨G', σ'⟩ := fr
+        exact ⟨_, Solve.resume hst⟩
+    | nil =>
+        cases Q with
+        | nil => exact ⟨_, Solve.finish hst⟩
+        | cons G₀ Q' =>
+            by_cases hF : InFixPoint F G₀
+            · exact ⟨_, Solve.skip hF⟩
+            · exact ⟨_, Solve.next hst hF⟩
+  · simp only [Stable, not_and_or] at hst
+    rcases hst with h | h
+    -- something still to add to the state
+    · push Not at h
+      obtain ⟨σ', hgrow, -⟩ := h
+      exact ⟨_, Solve.step hgrow⟩
+    -- something still to be solved first
+    · push Not at h
+      obtain ⟨c, e, G₀, hre, hneeds⟩ := h
+      by_cases hcyc : G₀ = G ∨ G₀ ∈ Stack.globs S
+      · exact ⟨_, Solve.cycle hre hneeds hcyc⟩
+      · push Not at hcyc
+        exact ⟨_, Solve.suspend hre hneeds hcyc.1 hcyc.2⟩
+
+/-- **If the algorithm reports no cycle, it terminates in `.done`.**
+
+    By `solve_progress` a run can always be extended, so the only way to fail
+    to reach `.done F` is to run forever; what remains is the well-foundedness
+    argument, which is why this is stated — and used — as a black box:
+
+    * The conclusion is existential: it is enough that *one* run terminates,
+      not that every one does.  This matters, because `Solve.step` may fire on
+      a `Grow` that adds nothing (`Stable` forbids only growth that escapes
+      `σ`, and `step` does not test for it), so an adversarial run can `step`
+      forever.  The run to build is the one that takes `step` only when it
+      strictly increases the state, and the rule `solve_progress` selects
+      otherwise.
+    * Along such a run each `step` is a strict `<` in `State G`, whose height
+      is finite because every set a `Grow` adds is drawn from the classes,
+      objects and globals *occurring in `L`* — the ambient `ClassName` and
+      `GlobName` are `String`, so the bound comes from the program, not the
+      type.
+    * `suspend` is the only rule that grows the stack, and it fires only for
+      `G₀ ∉ Stack.globs S` with `G₀ ≠ G`, so `Stack.globs S` stays duplicate
+      free and the stack is bounded by `L.GlobNames`; `resume`, `next`, `skip`
+      and `finish` each shrink the stack or the queue.
+
+    The hypothesis is the *reported* cycle, not the declarative one: it is the
+    weaker of the two (`no_dep_no_cycle`), and it is what the caller has. -/
+theorem solve_no_reported_cycle_done {L : Program} (hL : L.HasMain)
+    (h : ¬ ∃ G' : GlobName, Solve.Star L (Config.start L hL) (.cycle G'))
+    : ∃ F : FixPoints, Solve.Star L (Config.start L hL) (.done F) := by
+  sorry
+
 /-- If there isn't a cycle, Solve terminates -/
 theorem solve_no_cycle_done {L : Program} {σ : Proof.Sigma} (hL : L.HasMain)
     (h : ∀ G, ¬ G ∈ Proof.Dep σ L G)
-    : ∃ F : FixPoints, Solve.Star L (Config.start L hL) (.done F) := by
-  -- Whenever we have a dependency, ie. we have a Needs, we are not in
-  -- the cycle situation. We will suspend and resume
-  -- now we need to prove that step terminates.
-  -- we only ever add to the state...
-  -- the stack and queue are finite, so it will reach the .done config
-  sorry
+    : ∃ F : FixPoints, Solve.Star L (Config.start L hL) (.done F) :=
+  -- no declarative cycle, so nothing for the algorithm to report
+  solve_no_reported_cycle_done hL (no_dep_no_cycle h)
 
 /-- If Solve terminates, there is a fixpoint  -/
-theorem solve_done_fixpoint {L : Program} {F : FixPoints} {σ : Proof.Sigma} {hL : L.HasMain}
+theorem solve_done_fixpoint {L : Program} {F : FixPoints} {hL : L.HasMain}
     (h : Solve.Star L (Config.start L hL) (.done F)) : Proof.FixPoint F.glue L := by
   sorry
 
 /-- solve either terminates in a cycle or gives a fix point --/
-theorem solve_terminates {L : Program} (hL : L.HasMain) :
+theorem solve_terminates {L : Program} (hL : L.HasMain)
+    {σ : Proof.Sigma} (hσ : Proof.FixPoint σ L):
     (∃ F : FixPoints, Proof.FixPoint F.glue L) ∨
     (∃ G' : GlobName, Solve.Star L (Config.start L hL) (.cycle G')) := by
   sorry
 
-end Algorithm
+end Algorithm00

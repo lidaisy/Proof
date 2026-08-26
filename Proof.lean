@@ -8,4 +8,4 @@ import Proof.AccessImpliesDep
 import Proof.StackDepChain
 import Proof.PartialOnStack
 import Proof.AbstractDetectsCycle
-import Proof.Algorithm
+import Proof.Algorithm.Definition
