@@ -57,11 +57,6 @@ instance Sigma.instOrderBot : OrderBot (Sigma) where
 
 @[simp] theorem FixPoints.glue_bot : FixPoints.glue (fun _ => none) = ⊥ := rfl
 
-def Config.fixpoints : Config → FixPoints
-  | .mk _ _ F _ _ => F
-  | .done F => F
-  | .cycle _ => fun _ => none
-
 /-! ### Comparing an algorithm state with (the `G`-slice of) a global fixpoint -/
 
 /-- The slice of a global analysis `Sg` at one global `G`, as an algorithm state. -/

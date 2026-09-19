@@ -293,6 +293,11 @@ inductive Config
   | cycle (G : GlobName)
   deriving Inhabited
 
+def Config.fixpoints : Config → FixPoints
+  | .mk _ _ F _ _ => F
+  | .done F => F
+  | .cycle _ => fun _ => none
+
 inductive Solve (L : Program) : Config → Config → Prop
   | step {G : GlobName} {σ σ' : State G} {F : FixPoints} {S : Stack} {Q : Queue} :
       Grow L F G σ σ' →

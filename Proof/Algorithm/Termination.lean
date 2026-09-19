@@ -32,6 +32,21 @@ theorem solve_progress {L : Program} {G : GlobName} {σ : State G} {F : FixPoint
       · push Not at hcyc
         exact ⟨_, Solve.suspend hre hneeds hcyc.1 hcyc.2⟩
 
+theorem solve_terminates {L : Program} {G : GlobName}
+    {hL : L.HasMain}
+    (hcyc : ¬(Solve.Star L (Config.start L hL) (Config.cycle G)) )
+    : ∃ F, Solve.Star L (Config.start L hL) (Config.done F) := by
+  -- apply solve_progress and we get c'
+  -- cases c'
+  -- .done => trivial
+  -- .cycle => contradiction
+  -- .step =>
+  -- .skip
+  -- .suspend
+  -- .next
+  -- .resume
+  sorry
+
 -- /-- **If the algorithm reports no cycle, it terminates in `.done`.**
 
 --     By `solve_progress` a run can always be extended, so the only way to fail
