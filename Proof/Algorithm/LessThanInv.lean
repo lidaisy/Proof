@@ -359,22 +359,20 @@ theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
 
 /-! ### The invariant -/
 
-/-- The states the algorithm is currently working on — the focus and everything
-    suspended on the stack — are below `Sg` too.  This is the extra constraint that
-    makes the invariant inductive: `Stable` only says the focus is *closed* under
-    `Grow`, which is the wrong direction for `≤ Sg`. -/
+/-- The current config, c,  of the algorithm -- the fixpoints, the current state, and the suspended
+    states -- are all below Sg -/
 def Config.Below (c : Config) (Sg : Sigma) : Prop :=
   match c with
-  | .mk G σ _ S _ => State.Sub σ (State.ofSigma Sg G) ∧
+  | .mk G σ f S _ => f.glue ≤ Sg ∧ State.Sub σ (State.ofSigma Sg G) ∧
       ∀ p ∈ S, State.Sub p.2 (State.ofSigma Sg p.1)
   | .done _ => True
   | .cycle _ => True
 
 def LessThanInv (c : Config) (L : Program) : Prop :=
-  ∀ σ : Proof.Sigma, Proof.FixPoint σ L → c.fixpoints.glue ≤ σ ∧ c.Below σ
+  ∀ σ : Proof.Sigma, Proof.FixPoint σ L → c.Below σ
 
 theorem less_than_step {L : Program} {c c' : Config}
-    (hstep : Solve L c c') (h : LessThanInv c L)
+    (h : LessThanInv c L) (hstep : Solve L c c')
     : LessThanInv c' L := by
   intro Sg hSg
   cases hstep with
@@ -389,7 +387,7 @@ theorem less_than_step {L : Program} {c c' : Config}
       | head => exact hσ
       | tail _ hp => exact hS p hp
   | cycle _ =>
-      exact ⟨by simp only [Config.fixpoints, FixPoints.glue_bot]; exact bot_le, trivial⟩
+      trivial
   | @resume G G' σ σ' F S Q _ =>
       obtain ⟨hF, hσ, hS⟩ := h Sg hSg
       refine ⟨glue_insert_sub hF hσ, hS ⟨G', σ'⟩ List.mem_cons_self, ?_⟩
@@ -401,8 +399,7 @@ theorem less_than_step {L : Program} {c c' : Config}
       obtain ⟨hF, hσ, hS⟩ := h Sg hSg
       exact ⟨hF, hσ, hS⟩
   | @finish G σ F _ =>
-      obtain ⟨hF, hσ, _⟩ := h Sg hSg
-      exact ⟨glue_insert_sub hF hσ, trivial⟩
+      trivial
 
 theorem less_than {L : Program} (hL : L.HasMain) {c : Config}
     (hstar : Solve.Star L (Config.start L hL) c)
@@ -411,8 +408,8 @@ theorem less_than {L : Program} (hL : L.HasMain) {c : Config}
   | refl =>
     intro σ _
     refine ⟨?_, State.zero_sub _, by simp⟩
-    simp only [Config.start, Config.fixpoints, FixPoints.glue_bot]
+    simp only [FixPoints.glue_bot]
     exact bot_le
-  | tail hr hgrow ih => exact less_than_step hgrow ih
+  | tail hr hgrow ih => exact less_than_step ih hgrow
 
 end Algorithm
