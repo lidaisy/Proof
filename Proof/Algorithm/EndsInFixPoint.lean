@@ -17,6 +17,7 @@ theorem fixpoint_is_stable {c : Config} {G : GlobName}
 
 theorem algo_fixpoint_is_decl_fixpoint {c : Config}
     {L : Program} {hL : L.HasMain} (hC : Solve.Star L (Config.start L hL) c)
+    -- add derived L here!!!
     : Proof.FixPoint c.fixpoints.glue L := by
   -- we need to break down Star to base case and inductive case...
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩

@@ -13,13 +13,12 @@ Looked at LessThanInv. It makes sense.
 Added a termination theorem in Termination.lean
 
 Date: Sept 19
-
 Per yesterday: Should probably change my algorithm. Config shouldn't have a queue at all.
 We start with G\_main and only suspend and resume when necessary
 
 For the fixpoint argument, we need something that says if G is InFixPoint,
 THEN we satisfy FixPoint.
-The thing is, we need this addition to prove that every iteration of the algorithm
+We need this addition to prove that every iteration of the algorithm
 fixpoint IS a fixpoint.
 Otherwise, consider config.start.fixpoints = \emptyset.
 A G that we haven't considered will break the theorem.
@@ -29,3 +28,7 @@ With this addition, can change the algorithm to satisfy
 Added Conclusion.lean.
 
 Next step, do Cycle.lean.
+
+Date: Sept 20
+I think I know how to fix the FixPoint argument. We declare a new L with only
+G's within the Algo's FixPoints list.
