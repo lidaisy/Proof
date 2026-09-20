@@ -13,9 +13,9 @@ open Proof (Program)
 -- else, by h, we have trans cycle
 
 
-theorem report_cycle_then_dep {L : Program} (hL : L.HasMain) :
+theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
     ∃ G, Solve.Star L (Config.start L hL) (.cycle G) →
-    ∀ σ : Proof.Sigma, Proof.FixPoint σ L →  G ∈ Proof.Dep σ L G := by
+    ∀ σ : Proof.Sigma, Proof.FixPoint σ L → G ∈ Proof.Dep σ L G := by
   sorry
 
 end Algorithm

@@ -34,7 +34,7 @@ theorem solve_progress {L : Program} {G : GlobName} {σ : State G} {F : FixPoint
 
 theorem solve_terminates {L : Program} {G : GlobName}
     {hL : L.HasMain}
-    (hcyc : ¬(Solve.Star L (Config.start L hL) (Config.cycle G)) )
+    (hcyc : ¬(Solve.Star L (Config.start L hL) (Config.cycle G)))
     : ∃ F, Solve.Star L (Config.start L hL) (Config.done F) := by
   -- apply solve_progress and we get c'
   -- cases c'

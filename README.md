@@ -1,6 +1,6 @@
 # Proof
 
-HEEEEEEEELLO!
+HEEEEEEEELLO! (like claude.md, but for me. how amazing)
 
 Date: Aug 26
 Next steps:
@@ -11,12 +11,21 @@ Next steps:
 Date: Sept 18
 Looked at LessThanInv. It makes sense.
 Added a termination theorem in Termination.lean
-Started EndsInFixPoint by first proving that every state G in the fixpoint is
-stable, which gives us Grow, and thus FixPoint
-We also need the helper that every_object_is_in_fixpoint, by virtue to config.start
-(This is probably different from what the algorithm actually does though...
 
-If Instead, config.start doesn't have a queue at all. We only suspend and resume...
-Then we need to say that every object that Main depends on (the algorithm's Dep) is InFixPoint
-...but how?
-)
+Date: Sept 19
+
+Per yesterday: Should probably change my algorithm. Config shouldn't have a queue at all.
+We start with G\_main and only suspend and resume when necessary
+
+For the fixpoint argument, we need something that says if G is InFixPoint,
+THEN we satisfy FixPoint.
+The thing is, we need this addition to prove that every iteration of the algorithm
+fixpoint IS a fixpoint.
+Otherwise, consider config.start.fixpoints = \emptyset.
+A G that we haven't considered will break the theorem.
+
+With this addition, can change the algorithm to satisfy
+
+Added Conclusion.lean.
+
+Next step, do Cycle.lean.
