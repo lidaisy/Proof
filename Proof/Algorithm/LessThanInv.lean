@@ -407,4 +407,102 @@ theorem less_than {L : Program} (hL : L.HasMain) {c : Config}
     exact bot_le
   | tail hr hgrow ih => exact less_than_step ih hgrow
 
+def DepLessThan (c : Config) (L : Program) : Prop :=
+  ∀ σ : Proof.Sigma, Proof.FixPoint σ L →
+  ∀ G : GlobName, Dep c.fixpoints L G ≤ Proof.Dep σ L G
+
+theorem dep_none {L : Program} {G : GlobName} :
+    {G₀ | DepJ (fun _ => none) L G G₀} = (∅ : Set GlobName) := by
+  ext G₀
+  constructor
+  · intro h
+    induction h with
+    | @direct G G₀ c i hIn hRE =>
+        rcases hIn with ⟨σ, hσ⟩
+        simp at hσ
+    | trans h₁ h₂ ih₁ ih₂ =>
+        exact ih₁
+  · simp
+
+theorem re_insert_other {L : Program} {G G_1 : GlobName} {F : FixPoints}
+    {σ : State G} {c : Ctx} {e : Expr} (hne : G_1 ≠ G) (hG_1 : InFixPoint F G_1) :
+    RE G_1 ((F.insert G σ).lookup G_1 (by simp [InFixPoint.mono_insert hG_1])) L c e = RE G_1 (F.lookup G_1 hG_1) L c e := by sorry
+
+theorem dep_insert_other {L : Program} {G G_1 : GlobName} {F : FixPoints}
+    {σ : State G} (hne : G_1 ≠ G) :
+    {G₀ | DepJ (F.insert G σ) L G_1 G₀} = {G₀ | DepJ F L G_1 G₀} := by
+  ext G₀
+  constructor
+  · intro h
+    induction h with
+    | @direct G' G'₀ c i hIn hRE =>
+        -- after inserting G, we do not change DepJ because RE isn't changed
+        rcases hIn with ⟨σ', hσ'⟩
+        simp [FixPoints.insert_other hne] at hσ'
+        have hIn' : InFixPoint F G' := ⟨σ', hσ'⟩
+        simp [re_insert_other hne hIn'] at hRE
+        exact DepJ.direct hRE
+    | @trans G1 G2 G3 h₁ h₂ ih₁ ih₂ =>
+        sorry
+  · intro h
+    sorry
+
+
+theorem dep_less_than_step {L : Program} {c c' : Config}
+    (h : DepLessThan c L) (hstep : Solve L c c')
+    (hlessc : LessThanInv c L) (hlessc' : LessThanInv c' L)
+    : DepLessThan c' L := by
+  intro Sg hSg
+  cases hstep with
+  | @step G σ σ' F S Q hg =>
+      obtain hG := h Sg hSg
+      -- exact ⟨hF, grow_sub hSg hF hσ hg, hS⟩
+      sorry
+  | @suspend G G₀ σ F S Q c e hre hne _ _ =>
+      obtain hG := h Sg hSg
+      -- refine ⟨hF, State.zero_sub _, ?_⟩
+      -- intro p hp
+      -- cases hp with
+      -- | head => exact hσ
+      -- | tail _ hp => exact hS p hp
+      sorry
+  | cycle _ =>
+      simp only [Config.fixpoints, Dep, dep_none]
+      intro G
+      exact bot_le
+  | @resume G G' σ σ' F S Q _ =>
+      obtain hG := h Sg hSg
+      -- refine ⟨glue_insert_sub hF hσ, hS ⟨G', σ'⟩ List.mem_cons_self, ?_⟩
+      -- exact fun p hp => hS p (List.mem_cons_of_mem _ hp)
+      sorry
+  | @next G G₀ σ F Q _ _ =>
+      obtain hG := h Sg hSg
+      -- exact ⟨glue_insert_sub hF hσ, State.zero_sub _, by simp⟩
+      sorry
+  | @skip G G₀ σ F Q _ =>
+      obtain hG := h Sg hSg
+      exact hG
+  | @finish G σ F _ =>
+      intro G₁
+      simp [Config.fixpoints, Dep]
+      by_cases hG₁ : G₁ = G
+      · subst hG₁
+        sorry
+      · have hDepG' : ∀ G' ≠ G, {G₀ | DepJ (F.insert G σ) L G' G₀} = {G₀ | DepJ F L G' G₀} := by
+          intro G' hG'
+          simp [dep_insert_other hG']
+        simp [hDepG' G₁ hG₁]
+        exact h Sg hSg G₁
+
+
+theorem dep_less_than {L : Program} (hL : L.HasMain) {c : Config}
+    (hstar : Solve.Star L (Config.start L hL) c)
+    : DepLessThan c L := by
+  induction hstar with
+  | refl =>
+    intro σ hF G
+    simp only [Config.start, Config.fixpoints, Dep, dep_none]
+    exact bot_le
+  | tail hr hgrow ih => exact dep_less_than_step ih hgrow sorry sorry
+
 end Algorithm

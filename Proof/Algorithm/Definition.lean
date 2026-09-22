@@ -62,7 +62,7 @@ def FixPoints.insert (F : FixPoints) (G : GlobName) (σ : State G) : FixPoints :
 theorem InFixPoint.insert {F : FixPoints} {G : GlobName} {σ : State G} :
     InFixPoint (F.insert G σ) G := ⟨σ, FixPoints.insert_self⟩
 
-theorem InFixPoint.mono_insert {F : FixPoints} {G G' : GlobName} {σ : State G}
+@[simp] theorem InFixPoint.mono_insert {F : FixPoints} {G G' : GlobName} {σ : State G}
     (h : InFixPoint F G') : InFixPoint (F.insert G σ) G' := by
   by_cases hG : G' = G
   · subst hG; exact InFixPoint.insert
@@ -192,6 +192,15 @@ inductive RE (G : GlobName) (σ : State G) (L : Program) : Ctx → Expr → Prop
   | newC₂ {c D e₁ e₂} : RE G σ L c (Expr.newC D e₁ e₂) → RE G σ L c e₂
   | app₁ {c e₁ e₂} : RE G σ L c (Expr.app e₁ e₂) → RE G σ L c e₁
   | app₂ {c e₁ e₂} : RE G σ L c (Expr.app e₁ e₂) → RE G σ L c e₂
+
+inductive DepJ (F : FixPoints) (L : Program) : GlobName → GlobName → Prop
+  | direct {G G₀ : GlobName} {c : Ctx} {i : Idx} {h : InFixPoint F G} :
+      RE G (F.lookup G h) L c (Expr.gproj G₀ i) → DepJ F L G G₀
+  | trans {G G' G₀ : GlobName} :
+      DepJ F L G G' → DepJ F L G' G₀ → DepJ F L G G₀
+
+def Dep (F : FixPoints) (L : Program) (G : GlobName) : Set GlobName :=
+  { G₀ | DepJ F L G G₀ }
 
 structure FixPoint (G : GlobName) (σ : State G) (L : Program) (F : FixPoints)
   : Prop where
