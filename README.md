@@ -32,3 +32,10 @@ Next step, do Cycle.lean.
 Date: Sept 20
 I think I know how to fix the FixPoint argument. We declare a new L with only
 G's within the Algo's FixPoints list.
+
+Date: Sept 23
+One month from the project and it seems I had forgotten the point of
+the fucking algorithm...
+
+Idea: when the program runs, obviously it starts with Main and only goes
+to global objects reachable from Main. However, our analysis will look at each individual global object, and find cyclic dependencies that way. It is meant to be faster and to look at less code because only a subset of the whole program starts from the global objects.

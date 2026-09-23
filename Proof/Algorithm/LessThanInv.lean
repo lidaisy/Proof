@@ -407,6 +407,8 @@ theorem less_than {L : Program} (hL : L.HasMain) {c : Config}
     exact bot_le
   | tail hr hgrow ih => exact less_than_step ih hgrow
 
+/-- AlgoDep ≤ Dep. Used in Cycle.lean. -/
+
 def DepLessThan (c : Config) (L : Program) : Prop :=
   ∀ σ : Proof.Sigma, Proof.FixPoint σ L →
   ∀ G : GlobName, Dep c.fixpoints L G ≤ Proof.Dep σ L G
@@ -426,7 +428,32 @@ theorem dep_none {L : Program} {G : GlobName} :
 
 theorem re_insert_other {L : Program} {G G_1 : GlobName} {F : FixPoints}
     {σ : State G} {c : Ctx} {e : Expr} (hne : G_1 ≠ G) (hG_1 : InFixPoint F G_1) :
-    RE G_1 ((F.insert G σ).lookup G_1 (by simp [InFixPoint.mono_insert hG_1])) L c e = RE G_1 (F.lookup G_1 hG_1) L c e := by sorry
+    RE G_1 ((F.insert G σ).lookup G_1 (by simp [InFixPoint.mono_insert hG_1])) L c e =
+      RE G_1 (F.lookup G_1 hG_1) L c e := by
+  have hstate :
+      ((F.insert G σ).lookup G_1 (by simp [InFixPoint.mono_insert hG_1])) =
+        F.lookup G_1 hG_1 := by
+    simp [FixPoints.lookup, FixPoints.insert_other hne]
+  rw [hstate]
+
+-- theorem dep_insert_self {L : Program} {G : GlobName} {F : FixPoints}
+--     {σ : State G} (hG : F G = some σ) :
+--     {G₀ | DepJ (F.insert G σ) L G G₀} = {G₀ | DepJ F L G G₀} := by
+--   ext G₀
+--   constructor
+--   · intro h
+--     simp at h
+--     induction h with
+--     | @direct c i hFix hRE =>
+--       -- Base case: You have hRE : RE G (F.lookup G hFix) L c (Expr.gproj G₀ i)
+--       sorry
+
+--     | trans h1 h2 ih1 ih2 =>
+--       -- Inductive case: You have the inductive hypotheses ih1 and ih2
+--       sorry
+--     -- simp [DepJ, FixPoints.insert_self] at h
+--     sorry
+--   · sorry
 
 theorem dep_insert_other {L : Program} {G G_1 : GlobName} {F : FixPoints}
     {σ : State G} (hne : G_1 ≠ G) :
@@ -446,6 +473,12 @@ theorem dep_insert_other {L : Program} {G G_1 : GlobName} {F : FixPoints}
         sorry
   · intro h
     sorry
+
+-- i dont know if im doing thid all wrong.
+-- the heart of the proof should be that if one fipoint
+-- is less than the other, then the dep should be less.
+-- then dep_less_than_step should depend on that.
+
 
 
 theorem dep_less_than_step {L : Program} {c c' : Config}
@@ -487,6 +520,9 @@ theorem dep_less_than_step {L : Program} {c c' : Config}
       simp [Config.fixpoints, Dep]
       by_cases hG₁ : G₁ = G
       · subst hG₁
+        have hBelow := hlessc Sg hSg
+        obtain ⟨_, hσ, _⟩ := hBelow
+
         sorry
       · have hDepG' : ∀ G' ≠ G, {G₀ | DepJ (F.insert G σ) L G' G₀} = {G₀ | DepJ F L G' G₀} := by
           intro G' hG'
@@ -503,6 +539,9 @@ theorem dep_less_than {L : Program} (hL : L.HasMain) {c : Config}
     intro σ hF G
     simp only [Config.start, Config.fixpoints, Dep, dep_none]
     exact bot_le
-  | tail hr hgrow ih => exact dep_less_than_step ih hgrow sorry sorry
+  | tail hr hgrow ih =>
+    rename_i c' c''
+    have hc' : LessThanInv c' L := (less_than hL hr)
+    exact dep_less_than_step ih hgrow hc' (less_than_step hc' hgrow)
 
 end Algorithm
