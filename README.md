@@ -43,3 +43,6 @@ to global objects reachable from Main. However, our analysis will look at each i
 Part 2:
 discharge sorries in report_cycle_then_dep and clean it up. Then
 we might be good for LessThanInv and Cycle
+
+Date Sept 24
+Go to Cycle and READ THIS THING

@@ -45,10 +45,27 @@ theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
     | cycle hare hneeds hG =>
       rename_i c i
       have hl := (less_than hL h_star) σ hf
-      have hl_all : (Config.mk G' σ' F S Q).all_data ≤ σ := by sorry
-      have hre_all : Proof.RE (Config.mk G' σ' F S Q).all_data L G c (Proof.Expr.gproj G i) := sorry
-      have hl_re := less_than_imp_re_less_than (E := (Proof.Expr.gproj G i)) hl_all hre_all
-      exact Proof.DepJ.direct hl_re
+      have hl_all : (Config.mk G' σ' F S Q).all_data ≤ σ := by
+        simp [Config.all_data]
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+        · sorry
+        · sorry
+        · sorry
+        · sorry
+        · sorry
+        · sorry
+        · sorry
+        · sorry
+      -- have hre_all : Proof.RE (Config.mk G' σ' F S Q).all_data L G c (Proof.Expr.gproj G i) := by
+      --   sorry
+      have smth := re_bridge hl.right.left hare
+      -- have hl_re := less_than_imp_re_less_than (E := (Proof.Expr.gproj G i)) hl_all hre_all
+      -- exact Proof.DepJ.direct hl_re
+      -- READ THIS THING
+      -- smth is the right way.
+      -- we have RE G' G, now we need to say Dep G G' using stackdep.
+      -- then we can say Proof.DepJ etc
+      sorry
   · cases h_step
   · cases h_step
 
