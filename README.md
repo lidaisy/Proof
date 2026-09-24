@@ -39,3 +39,7 @@ the fucking algorithm...
 
 Idea: when the program runs, obviously it starts with Main and only goes
 to global objects reachable from Main. However, our analysis will look at each individual global object, and find cyclic dependencies that way. It is meant to be faster and to look at less code because only a subset of the whole program starts from the global objects.
+
+Part 2:
+discharge sorries in report_cycle_then_dep and clean it up. Then
+we might be good for LessThanInv and Cycle

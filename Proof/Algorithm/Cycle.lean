@@ -1,4 +1,5 @@
 import Proof.Algorithm.Definition
+import Proof.Algorithm.LessThanInv
 
 namespace Algorithm
 
@@ -42,9 +43,12 @@ theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
   rcases c_prev with ⟨ G', σ', F, S, Q ⟩ | F | G'
   · cases h_step with
     | cycle hare hneeds hG =>
-      -- have hre : Proof.RE σ L G := by LessThanInv hare combined with F is less than σ
-
-    sorry
+      rename_i c i
+      have hl := (less_than hL h_star) σ hf
+      have hl_all : (Config.mk G' σ' F S Q).all_data ≤ σ := by sorry
+      have hre_all : Proof.RE (Config.mk G' σ' F S Q).all_data L G c (Proof.Expr.gproj G i) := sorry
+      have hl_re := less_than_imp_re_less_than (E := (Proof.Expr.gproj G i)) hl_all hre_all
+      exact Proof.DepJ.direct hl_re
   · cases h_step
   · cases h_step
 

@@ -530,6 +530,38 @@ theorem dep_less_than_step {L : Program} {c c' : Config}
         simp [hDepG' G₁ hG₁]
         exact h Sg hSg G₁
 
+theorem less_than_imp_re_less_than {σ σ': Proof.Sigma} {L : Program}
+    {G : GlobName} {ctx : Proof.Ctx} {E : Expr} (hl : σ ≤ σ') (h : Proof.RE σ L G ctx E) :
+    Proof.RE σ' L G ctx E := by
+  induction h with
+  | init₁ => sorry
+  | init₂ => sorry
+  | body => sorry
+  | proj => sorry
+  | newC₁ => sorry
+  | newC₂ => sorry
+  | app₁ => sorry
+  | app₂ => sorry
+
+theorem less_than_imp_dep_less_than {σ σ': Proof.Sigma} {L : Program}
+    {G : GlobName} (h : σ ≤ σ') :
+    Proof.Dep σ L G ≤ Proof.Dep σ' L G := by
+  simp [Proof.Dep]
+  intro Gs hσ'
+  induction hσ' with
+  | @direct G₁ G₂ ctx i hRE => exact Proof.DepJ.direct (less_than_imp_re_less_than h hRE)
+  | @trans G₁ G₂ G₃ h₁ h₂ ih₁ ih₂ => exact Proof.DepJ.trans ih₁ ih₂
+
+-- theorem less_than_imp_dep_less_than {c : Config} {σ : Proof.Sigma} {L : Program}
+--     {G : GlobName} (h: c.Below σ) :
+--     Proof.Dep c.all_data L G ≤ Proof.Dep σ L G := by
+--   simp [Proof.Dep]
+--   intro G'
+
+
+
+
+--   sorry
 
 theorem dep_less_than {L : Program} (hL : L.HasMain) {c : Config}
     (hstar : Solve.Star L (Config.start L hL) c)

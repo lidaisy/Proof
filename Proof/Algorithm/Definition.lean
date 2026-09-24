@@ -325,8 +325,8 @@ inductive Solve (L : Program) : Config → Config → Prop
       Solve L (.mk G σ F S Q)
               (.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀))
   | cycle {G G₀ : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
-      {c : Ctx} {e : Expr} :
-      RE G σ L c e → Needs σ L F c e G₀ →
+      {c : Ctx} {i : Idx} :
+      RE G σ L c (Expr.gproj G₀ i) → Needs σ L F c (Expr.gproj G₀ i) G₀ →
       (G₀ = G ∨ G₀ ∈ Stack.globs S) →
       Solve L (.mk G σ F S Q) (.cycle G₀)
   | resume {G G' : GlobName} {σ : State G} {σ' : State G'} {F : FixPoints}
@@ -390,5 +390,40 @@ theorem FixPoints.glue_gfld (h : F G = some σ) (i : Idx) : F.glue.GFld i G = σ
   cases i <;> simp [Proof.Sigma.GFld, State.GFld, h]
 
 end glue
+
+def Stack.find (S : Stack) (G : GlobName) : Option (State G) :=
+  match S with
+  | [] => none
+  | s :: ss => if h : s.fst = G then (some (h ▸ s.snd)) else Stack.find ss G
+
+def Config.curObj : Config → Option GlobName
+  | .mk G _ _ _ _ => G
+  | _ => none
+
+def Config.curState {G : GlobName} : Config → Option (State G)
+  | .mk G' σ _ _ _ => if h : G' = G then some (h ▸ σ) else none
+  | _ => none
+
+def Config.all_data (c : Config) : Proof.Sigma :=
+  let source (G : GlobName) : Option (State G) :=
+    (c.fixpoints G).orElse fun _ =>
+      (Config.curState (G := G) c).orElse fun _ => c.stack.find G
+  { Param := fun (G : GlobName) (C : ClassName) =>
+      (source G).map (fun σ => σ.Param C) |>.getD ∅
+    Fld₁  := fun G C => (source G).map (fun σ => σ.Fld₁ C) |>.getD ∅
+    Fld₂  := fun G C => (source G).map (fun σ => σ.Fld₂ C) |>.getD ∅
+    Ret   := fun G C => (source G).map (fun σ => σ.Ret C) |>.getD ∅
+    GFld₁ := fun G   => (source G).map (fun σ => σ.GFld₁) |>.getD ∅
+    GFld₂ := fun G   => (source G).map (fun σ => σ.GFld₂) |>.getD ∅
+    RM    := fun G   => (source G).map (fun σ => σ.RM) |>.getD ∅
+    This  := fun G C => (source G).map (fun σ => σ.This C) |>.getD ∅ }
+
+section all_data
+
+variable {c : Config}
+
+
+
+end all_data
 
 end Algorithm
