@@ -9,3 +9,8 @@ import Proof.StackDepChain
 import Proof.PartialOnStack
 import Proof.AbstractDetectsCycle
 import Proof.Algorithm.Definition
+import Proof.Algorithm.Conclusion
+import Proof.Algorithm.Cycle
+import Proof.Algorithm.LessThanInv
+import Proof.Algorithm.Termination
+import Proof.Algorithm.EndsInFixPoint

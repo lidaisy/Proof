@@ -294,7 +294,7 @@ inductive Grow (L : Program) (F : FixPoints) (G : GlobName) : State G → State 
 
 def Stable (L : Program) (F : FixPoints) (G : GlobName) (σ : State G) : Prop :=
   (∀ σ', Grow L F G σ σ' → σ' ≤ σ) ∧
-  (∀ c e G₀, RE G σ L c e → ¬ Needs σ L F c e G₀)
+  (∀ c i G₀, RE G σ L c (Expr.gproj G₀ i) → ¬ Needs σ L F c (Expr.gproj G₀ i) G₀)
 
 inductive Config
   | mk (G : GlobName) (σ : State G) (F : FixPoints) (S : Stack) (Q : Queue)
@@ -398,6 +398,7 @@ def Stack.find (S : Stack) (G : GlobName) : Option (State G) :=
 
 def Config.curObj : Config → Option GlobName
   | .mk G _ _ _ _ => G
+  | .cycle G => G
   | _ => none
 
 def Config.curState {G : GlobName} : Config → Option (State G)
@@ -422,7 +423,10 @@ section all_data
 
 variable {c : Config}
 
-
+theorem Config.state_to_all {L : Program} {G' : GlobName} {σ' : State G'} {F : FixPoints} {ctx : Ctx}
+    {E : Expr } {S : Stack} {Q : Queue} (h : RE G' σ' L ctx E)
+    : Proof.RE (Config.mk G' σ' F S Q).all_data L G' ctx E := by
+  sorry
 
 end all_data
 

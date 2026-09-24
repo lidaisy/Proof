@@ -3,28 +3,13 @@ import Proof.Algorithm.LessThanInv
 
 namespace Algorithm
 
-open Proof (Program)
-
--- by the less than all fixpoints lemma, since algoRE has G G₀ (from .cycle),
--- So does all fixpoints.
--- ie. RE G G₀
--- prove h : for any config, G _ _ S _, forall G' in S, G ∈ Dep G' (induction over steps)
--- have hdep : G' ∈ Dep G by definition of RE
--- Now by .cycle either G₀ = G or G₀ on stack
--- if first, exact hdep
--- else, by h, we have trans cycle
+open Proof (Program GlobName Expr)
 
 def StackDep (L : Program) : Config → Prop
-  | .mk G _ F S _ =>
-      ∀ G' ∈ S.globs, G ∈ Proof.Dep F.glue L G'
+  | c@(.mk G' _ _ S _) =>
+      ∀ G ∈ S.globs, G' ∈ Proof.Dep c.all_data L G
   | .cycle _ => True
   | .done _ => True
-
--- I don't like the above. Should just make a Dep for Algo...
--- Then prove that G is in AlgoDep G'.
--- Prove that AlgoRE is always less than RE. And so AlgoDep is always
--- less than Dep in LessThanInv.
--- then we have the fact that ∀ σ : Proof.Sigma, Proof.FixPoint σ L → G ∈ Proof.Dep σ L G'
 
 theorem stack_dep_step {c c' : Config} {L : Program} {hL : L.HasMain}
     (hstep : Solve L c c') (h : StackDep L c) :
@@ -42,30 +27,20 @@ theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
   rename_i c_prev
   rcases c_prev with ⟨ G', σ', F, S, Q ⟩ | F | G'
   · cases h_step with
-    | cycle hare hneeds hG =>
+    | cycle hSRE hneeds hG =>
       rename_i c i
       have hl := (less_than hL h_star) σ hf
-      have hl_all : (Config.mk G' σ' F S Q).all_data ≤ σ := by
-        simp [Config.all_data]
-        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-        · sorry
-        · sorry
-        · sorry
-        · sorry
-        · sorry
-        · sorry
-        · sorry
-        · sorry
-      -- have hre_all : Proof.RE (Config.mk G' σ' F S Q).all_data L G c (Proof.Expr.gproj G i) := by
-      --   sorry
-      have smth := re_bridge hl.right.left hare
-      -- have hl_re := less_than_imp_re_less_than (E := (Proof.Expr.gproj G i)) hl_all hre_all
-      -- exact Proof.DepJ.direct hl_re
-      -- READ THIS THING
-      -- smth is the right way.
-      -- we have RE G' G, now we need to say Dep G G' using stackdep.
-      -- then we can say Proof.DepJ etc
-      sorry
+      have hbelow := config_below_imp_all_data_less_than hl
+      have hCRE : Proof.RE (Config.mk G' σ' F S Q).all_data L G' c (Expr.gproj G i) := Config.state_to_all hSRE
+      have hCDep : G ∈ Proof.Dep (Config.mk G' σ' F S Q).all_data L G' := Proof.DepJ.direct hCRE
+      have hCCyc : G ∈ Proof.Dep (Config.mk G' σ' F S Q).all_data L G := by
+        rcases hG with hG' | hG'
+        · subst hG'
+          exact hCDep
+        · have hADep : G' ∈ Proof.Dep (Config.mk G' σ' F S Q).all_data L G := by
+            exact (stack_dep_star h_star) G hG'
+          exact Proof.DepJ.trans hADep hCDep
+      exact less_than_imp_dep_less_than hbelow hCCyc
   · cases h_step
   · cases h_step
 

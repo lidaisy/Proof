@@ -26,7 +26,7 @@ theorem solve_progress {L : Program} {G : GlobName} {σ : State G} {F : FixPoint
       exact ⟨_, Solve.step hgrow⟩
     -- something still to be solved first
     · push Not at h
-      obtain ⟨c, e, G₀, hre, hneeds⟩ := h
+      obtain ⟨c, i, G₀, hre, hneeds⟩ := h
       by_cases hcyc : G₀ = G ∨ G₀ ∈ Stack.globs S
       · exact ⟨_, Solve.cycle hre hneeds hcyc⟩
       · push Not at hcyc
