@@ -407,8 +407,6 @@ theorem less_than {L : Program} (hL : L.HasMain) {c : Config}
     exact bot_le
   | tail hr hgrow ih => exact less_than_step ih hgrow
 
-/-- AlgoDep ≤ Dep. Used in Cycle.lean. -/
-
 theorem stack_find_sub {S : Stack} {Sg : Proof.Sigma}
     (hS : ∀ p ∈ S, State.Sub p.2 (State.ofSigma Sg p.1)) :
     ∀ {G : GlobName} {τ : State G}, S.find G = some τ →
@@ -433,7 +431,8 @@ theorem stack_find_sub {S : Stack} {Sg : Proof.Sigma}
               exact hS p (by simp [hp])
             · exact hfind'
 
-theorem config_below_imp_all_data_less_than  {c : Config} {σ : Proof.Sigma} (h: c.Below σ) : c.all_data ≤ σ := by
+theorem config_below_imp_all_data_less_than  {c : Config} {σ : Proof.Sigma} (h: c.Below σ)
+    : c.all_data ≤ σ := by
   rcases c with ⟨ G', σ', F, S, Q ⟩ | F | G'
   · rcases h with ⟨hF, hσ, hS⟩
     have hstack : ∀ {G₁ : GlobName} {τ : State G₁}, S.find G₁ = some τ → State.Sub τ (State.ofSigma σ G₁) := by

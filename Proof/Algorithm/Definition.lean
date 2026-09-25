@@ -419,15 +419,4 @@ def Config.all_data (c : Config) : Proof.Sigma :=
     RM    := fun G   => (source G).map (fun σ => σ.RM) |>.getD ∅
     This  := fun G C => (source G).map (fun σ => σ.This C) |>.getD ∅ }
 
-section all_data
-
-variable {c : Config}
-
-theorem Config.state_to_all {L : Program} {G' : GlobName} {σ' : State G'} {F : FixPoints} {ctx : Ctx}
-    {E : Expr } {S : Stack} {Q : Queue} (h : RE G' σ' L ctx E)
-    : Proof.RE (Config.mk G' σ' F S Q).all_data L G' ctx E := by
-  sorry
-
-end all_data
-
 end Algorithm

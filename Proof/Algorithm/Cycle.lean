@@ -19,6 +19,14 @@ theorem stack_dep_star {c : Config} {L : Program} {hL : L.HasMain}
     (hstar : Solve.Star L (Config.start L hL) c) :
     StackDep L c := sorry
 
+theorem Config.state_to_all {L : Program} {G' : GlobName} {σ' : State G'} {F : FixPoints} {ctx : Ctx}
+    {E : Expr } {S : Stack} {Q : Queue} (h : RE G' σ' L ctx E)
+    : Proof.RE (Config.mk G' σ' F S Q).all_data L G' ctx E := by
+  have hnotFix : ¬ InFixPoint F G' := sorry
+  have hsubeq : State.Sub σ' (State.ofSigma (Config.mk G' σ' F S Q).all_data G') := by
+   sorry
+  exact re_bridge hsubeq h
+
 theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
     ∀ G, Solve.Star L (Config.start L hL) (.cycle G) →
     ∀ σ : Proof.Sigma, Proof.FixPoint σ L → G ∈ Proof.Dep σ L G := by
