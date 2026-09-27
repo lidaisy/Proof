@@ -193,15 +193,6 @@ inductive RE (G : GlobName) (σ : State G) (L : Program) : Ctx → Expr → Prop
   | app₁ {c e₁ e₂} : RE G σ L c (Expr.app e₁ e₂) → RE G σ L c e₁
   | app₂ {c e₁ e₂} : RE G σ L c (Expr.app e₁ e₂) → RE G σ L c e₂
 
-inductive DepJ (F : FixPoints) (L : Program) : GlobName → GlobName → Prop
-  | direct {G G₀ : GlobName} {c : Ctx} {i : Idx} {h : InFixPoint F G} :
-      RE G (F.lookup G h) L c (Expr.gproj G₀ i) → DepJ F L G G₀
-  | trans {G G' G₀ : GlobName} :
-      DepJ F L G G' → DepJ F L G' G₀ → DepJ F L G G₀
-
-def Dep (F : FixPoints) (L : Program) (G : GlobName) : Set GlobName :=
-  { G₀ | DepJ F L G G₀ }
-
 structure FixPoint (G : GlobName) (σ : State G) (L : Program) (F : FixPoints)
   : Prop where
   rm_init : ∀ {e₁ e₂ K₁ K₂}, Program.HasObject L G e₁ e₂ →
