@@ -319,8 +319,8 @@ inductive Solve (L : Program) : Config → Config → Prop
       Grow L F G σ σ' →
       Solve L (.mk G σ F S Q) (.mk G σ' F S Q)
   | suspend {G G₀ : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
-      {c : Ctx} {e : Expr} :
-      RE G σ L c e → Needs σ L F c e G₀ →
+      {c : Ctx} {i : Idx} :
+      RE G σ L c (Expr.gproj G₀ i) → Needs σ L F c (Expr.gproj G₀ i) G₀ →
       G₀ ≠ G → G₀ ∉ Stack.globs S →
       Solve L (.mk G σ F S Q)
               (.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀))

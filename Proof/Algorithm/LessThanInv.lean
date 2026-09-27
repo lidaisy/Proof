@@ -605,15 +605,16 @@ theorem config_below_imp_all_data_less_than  {c : Config} {σ : Proof.Sigma} (h:
 theorem less_than_imp_re_less_than {σ σ': Proof.Sigma} {L : Program}
     {G : GlobName} {ctx : Proof.Ctx} {E : Expr} (hl : σ ≤ σ') (h : Proof.RE σ L G ctx E) :
     Proof.RE σ' L G ctx E := by
+  have ⟨_ , _, _, _, _, _, hRM', _⟩ := hl
   induction h with
-  | init₁ => sorry
-  | init₂ => sorry
-  | body => sorry
-  | proj => sorry
-  | newC₁ => sorry
-  | newC₂ => sorry
-  | app₁ => sorry
-  | app₂ => sorry
+  | @init₁ _ _ hG => exact Proof.RE.init₁ hG
+  | @init₂ _ _ hG => exact Proof.RE.init₂ hG
+  | @body C e hRM hC => exact Proof.RE.body ((hRM' G) hRM) hC
+  | @proj _ _ _ _ ih => exact Proof.RE.proj ih
+  | @newC₁ _ _ _ _ _ ih => exact Proof.RE.newC₁ ih
+  | @newC₂ _ _ _ _ _ ih => exact Proof.RE.newC₂ ih
+  | @app₁ _ _ _ _ ih => exact Proof.RE.app₁ ih
+  | @app₂ _ _ _ _ ih => exact Proof.RE.app₂ ih
 
 theorem less_than_imp_dep_less_than {σ σ': Proof.Sigma} {L : Program}
     {G : GlobName} (h : σ ≤ σ') :
