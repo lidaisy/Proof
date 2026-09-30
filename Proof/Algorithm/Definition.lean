@@ -410,4 +410,8 @@ def Config.all_data (c : Config) : Proof.Sigma :=
     RM    := fun G   => (source G).map (fun σ => σ.RM) |>.getD ∅
     This  := fun G C => (source G).map (fun σ => σ.This C) |>.getD ∅ }
 
+theorem no_reevaluation {c : Config} {G : GlobName} (h : c.curObj = some G)
+    : ¬ InFixPoint c.fixpoints G := by
+  sorry
+
 end Algorithm

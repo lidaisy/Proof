@@ -142,12 +142,15 @@ theorem stack_dep_star {c : Config} {L : Program} {hL : L.HasMain}
     (hstar : Solve.Star L (Config.start L hL) c) :
     StackDep L c := sorry
 
-theorem Config.state_to_all {L : Program} {G' : GlobName} {σ' : State G'} {F : FixPoints} {ctx : Ctx}
-    {E : Expr } {S : Stack} {Q : Queue} (h : RE G' σ' L ctx E)
-    : Proof.RE (Config.mk G' σ' F S Q).all_data L G' ctx E := by
-  have hnotFix : ¬ InFixPoint F G' := sorry /- This should be its own theorem in Definition.lean-/
-  have hsubeq : State.Sub σ' (State.ofSigma (Config.mk G' σ' F S Q).all_data G') := by
+theorem Config.state_to_all {L : Program} {G' G : GlobName} {σ' : State G'} {F : FixPoints} {ctx : Ctx}
+    {S : Stack} {Q : Queue} {i : Idx} (h : RE G' σ' L ctx (Expr.gproj G i))
+    : Proof.RE (Config.mk G' σ' F S Q).all_data L G' ctx (Expr.gproj G i) := by
+  let conf := (Config.mk G' σ' F S Q)
+  have hnotFix := by
+    simpa [Config.curObj] using (no_reevaluation (c := conf) (G := G') (h := by rfl))
+  have hsubeq : State.Sub σ' (State.ofSigma conf.all_data G') := by
    sorry
+  subst conf
   exact re_bridge hsubeq h
 
 theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
@@ -162,14 +165,16 @@ theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
       rename_i c i
       have hl := (less_than hL h_star) σ hf
       have hbelow := config_below_imp_all_data_less_than hl
-      -- factor out (Config.mk G' σ' F S Q).all_data
-      have hCRE : Proof.RE (Config.mk G' σ' F S Q).all_data L G' c (Expr.gproj G i) := Config.state_to_all hSRE
-      have hCDep : G ∈ Proof.Dep (Config.mk G' σ' F S Q).all_data L G' := Proof.DepJ.direct hCRE
-      have hCCyc : G ∈ Proof.Dep (Config.mk G' σ' F S Q).all_data L G := by
+      let c_prev := (Config.mk G' σ' F S Q)
+      let c_prev_data := c_prev.all_data
+      have hCRE : Proof.RE c_prev_data L G' c (Expr.gproj G i) := by
+        simpa [c_prev, c_prev_data] using (Config.state_to_all hSRE)
+      have hCDep : G ∈ Proof.Dep c_prev_data L G' := Proof.DepJ.direct hCRE
+      have hCCyc : G ∈ Proof.Dep c_prev_data L G := by
         rcases hG with hG' | hG'
         · subst hG'
           exact hCDep
-        · have hADep : G' ∈ Proof.Dep (Config.mk G' σ' F S Q).all_data L G := by
+        · have hADep : G' ∈ Proof.Dep c_prev_data L G := by
             exact (stack_dep_star h_star).left G hG'
           exact Proof.DepJ.trans hADep hCDep
       exact less_than_imp_dep_less_than hbelow hCCyc
