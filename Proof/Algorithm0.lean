@@ -498,7 +498,7 @@ abbrev Solve.Star (L : Program) : Config → Config → Prop :=
   Relation.ReflTransGen (Solve L)
 
 /-- The initial configuration for a program. -/
-def Config.start (L : Program) (hL : L.HasMain) : Config :=
+def Config.start (L : Program) (hL : L.WellFormed) : Config :=
   let objects := L.GlobNames
   let G := objects.head hL
   let Q := objects.tail
@@ -663,7 +663,7 @@ theorem done_of_stable {L F G σ} (hOw : OwnersOk G σ) (hAd : ADepOk G σ L F)
 
 -- theorem solve_terminates in either .cycle or .done
 theorem solve_terminates {L : Program} {G G' : GlobName} {Q : Queue} {F : FixPoints}
-    (hL : L.HasMain) :
+    (hL : L.WellFormed) :
 (Solve.Star L (Config.start L hL) (.done F)) ∨
   (Solve.Star L (Config.start L hL) (.cycle G')) := by
 -- if u start with an empty stack, start computing fix point. by kj or needs, you either have
@@ -1087,7 +1087,7 @@ theorem dep_subset_adep {G : GlobName} {σ : Proof.Sigma} {L : Program}
     valid, with the same `K`, when a further object is added) plus the invariant
     that a closed object is never re-opened. -/
 theorem solve_done_fixpoint {L : Program} {G : GlobName} {Q : Queue} {F : FixPoints}
-    {hL : L.HasMain}
+    {hL : L.WellFormed}
     (h : Solve.Star L (Config.start L hL) (.done F)) : Proof.FixPoint F.glue L := by
   sorry
 

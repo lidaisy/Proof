@@ -4,7 +4,7 @@ namespace Algorithm
 
 open Proof (Program GlobName Expr)
 
-theorem every_object_is_in_fixpoint {L : Program} {hL : L.HasMain} {G : GlobName}
+theorem every_object_is_in_fixpoint {L : Program} {hL : L.WellFormed} {G : GlobName}
     {e₁ e₂ : Expr} {c : Config} (hG : L.HasObject G e₁ e₂)
     (hC : Solve.Star L (Config.start L hL) c)
     : InFixPoint c.fixpoints G := by
@@ -16,7 +16,7 @@ theorem fixpoint_is_stable {c : Config} {G : GlobName}
   sorry
 
 theorem algo_fixpoint_is_decl_fixpoint {c : Config}
-    {L : Program} {hL : L.HasMain} (hC : Solve.Star L (Config.start L hL) c)
+    {L : Program} {hL : L.WellFormed} (hC : Solve.Star L (Config.start L hL) c)
     -- add derived L here!!!
     : Proof.FixPoint c.fixpoints.glue L := by
   -- we need to break down Star to base case and inductive case...
@@ -35,7 +35,7 @@ theorem algo_fixpoint_is_decl_fixpoint {c : Config}
   · sorry
   · sorry
 
-theorem solve_done_fixpoint {L : Program} {F : FixPoints} {hL : L.HasMain}
+theorem solve_done_fixpoint {L : Program} {F : FixPoints} {hL : L.WellFormed}
     (h : Solve.Star L (Config.start L hL) (.done F)) : Proof.FixPoint F.glue L :=
   algo_fixpoint_is_decl_fixpoint h
 

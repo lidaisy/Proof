@@ -420,10 +420,10 @@ abbrev Solve.Star (L : Program) : Config → Config → Prop :=
   Relation.ReflTransGen (Solve L)
 
 /-- The initial configuration: solve the first object of `L`, queue the rest.
-    The well-formedness hypothesis `hL : L.HasMain` is what supplies the head of
+    The well-formedness hypothesis `hL : L.WellFormed` is what supplies the head of
     `L.GlobNames`; it is a hypothesis carried by every theorem about a run, not
-    an axiom (see `Program.HasMain`). -/
-def Config.start (L : Program) (hL : L.HasMain) : Config :=
+    an axiom (see `Program.WellFormed`). -/
+def Config.start (L : Program) (hL : L.WellFormed) : Config :=
   let objects := L.GlobNames
   let G := objects.head hL
   let Q := objects.tail
@@ -920,7 +920,7 @@ theorem solve_cycle_of_inner_walk {L : Program} {F : FixPoints}
       that object is `Stable`, so reaching `G` from an unrelated start is a
       termination fact, not a reachability one. -/
 theorem algo_detects_dep {G : GlobName} {σ : Proof.Sigma} {L : Program}
-    {F : FixPoints} {Q : Queue} {S : Stack} (hL : L.HasMain)
+    {F : FixPoints} {Q : Queue} {S : Stack} (hL : L.WellFormed)
     (hstart : Solve.Star L (Config.start L hL) (.mk G (State.zero G) F S Q))
     (hF : ∀ H : GlobName, Relation.ReflTransGen (AEdge L F) G H → ¬ InFixPoint F H)
     (hRM : ∀ H : GlobName, ∀ C ∈ σ.RM H,
@@ -1122,7 +1122,7 @@ theorem needs_zero_dep {σ : Proof.Sigma} {G G₀ : GlobName} {L : Program} {F :
   | appFun _ ih => exact fun hre => ih (RE.app₁ hre)
 
 theorem needs_dep {σ : Proof.Sigma} {L : Program} {c : Config}
-    {hL : L.HasMain} (hstar : Solve.Star L (Config.start L hL) c)
+    {hL : L.WellFormed} (hstar : Solve.Star L (Config.start L hL) c)
     : NeedsDep σ L c := by
   induction hstar with
   | refl =>
@@ -1130,14 +1130,14 @@ theorem needs_dep {σ : Proof.Sigma} {L : Program} {c : Config}
       exact needs_zero_dep (fun _ => not_inFixPoint_none) hneeds hre
   | tail hb hstep ih => exact needs_dep_step hstep ih
 
-theorem solve_dep_star {σ : Proof.Sigma} {L : Program} {c : Config} {hL : L.HasMain}
+theorem solve_dep_star {σ : Proof.Sigma} {L : Program} {c : Config} {hL : L.WellFormed}
     (hstar : Solve.Star L (Config.start L hL) c) : SolveDep σ L c := by
   induction hstar with
   | refl => exact trivial -- Config.start has an empty stack
   | tail hb hstep ih => exact solve_dep_step (needs_dep hb) hstep ih
 
 /-- The algorithm reports no cycle that the analysis does not have. -/
-theorem no_dep_no_cycle {σ : Proof.Sigma} {L : Program} {hL : L.HasMain}
+theorem no_dep_no_cycle {σ : Proof.Sigma} {L : Program} {hL : L.WellFormed}
     (h : ∀ G, ¬ G ∈ Proof.Dep σ L G)
     : ¬(∃ G' : GlobName, Solve.Star L (Config.start L hL) (.cycle G')) := by
   rintro ⟨G', hstar⟩
@@ -1206,25 +1206,25 @@ theorem solve_progress {L : Program} {G : GlobName} {σ : State G} {F : FixPoint
 
     The hypothesis is the *reported* cycle, not the declarative one: it is the
     weaker of the two (`no_dep_no_cycle`), and it is what the caller has. -/
-theorem solve_no_reported_cycle_done {L : Program} (hL : L.HasMain)
+theorem solve_no_reported_cycle_done {L : Program} (hL : L.WellFormed)
     (h : ¬ ∃ G' : GlobName, Solve.Star L (Config.start L hL) (.cycle G'))
     : ∃ F : FixPoints, Solve.Star L (Config.start L hL) (.done F) := by
   sorry
 
 /-- If there isn't a cycle, Solve terminates -/
-theorem solve_no_cycle_done {L : Program} {σ : Proof.Sigma} (hL : L.HasMain)
+theorem solve_no_cycle_done {L : Program} {σ : Proof.Sigma} (hL : L.WellFormed)
     (h : ∀ G, ¬ G ∈ Proof.Dep σ L G)
     : ∃ F : FixPoints, Solve.Star L (Config.start L hL) (.done F) :=
   -- no declarative cycle, so nothing for the algorithm to report
   solve_no_reported_cycle_done hL (no_dep_no_cycle h)
 
 /-- If Solve terminates, there is a fixpoint  -/
-theorem solve_done_fixpoint {L : Program} {F : FixPoints} {hL : L.HasMain}
+theorem solve_done_fixpoint {L : Program} {F : FixPoints} {hL : L.WellFormed}
     (h : Solve.Star L (Config.start L hL) (.done F)) : Proof.FixPoint F.glue L := by
   sorry
 
 /-- solve either terminates in a cycle or gives a fix point --/
-theorem solve_terminates {L : Program} (hL : L.HasMain)
+theorem solve_terminates {L : Program} (hL : L.WellFormed)
     {σ : Proof.Sigma} (hσ : Proof.FixPoint σ L):
     (∃ F : FixPoints, Proof.FixPoint F.glue L) ∨
     (∃ G' : GlobName, Solve.Star L (Config.start L hL) (.cycle G')) := by

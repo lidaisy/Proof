@@ -1,5 +1,33 @@
 import Proof.Algorithm.Definition
 
+namespace Proof
+
+@[ext] theorem Sigma.ext {σ₁ σ₂ : Sigma}
+    (hParam : σ₁.Param = σ₂.Param)
+    (hFld₁ : σ₁.Fld₁ = σ₂.Fld₁)
+    (hFld₂ : σ₁.Fld₂ = σ₂.Fld₂)
+    (hRet : σ₁.Ret = σ₂.Ret)
+    (hGFld₁ : σ₁.GFld₁ = σ₂.GFld₁)
+    (hGFld₂ : σ₁.GFld₂ = σ₂.GFld₂)
+    (hRM : σ₁.RM = σ₂.RM)
+    (hThis : σ₁.This = σ₂.This) :
+    σ₁ = σ₂ := by
+  cases σ₁ with
+  | mk Param Fld₁ Fld₂ Ret GFld₁ GFld₂ RM This =>
+      cases σ₂ with
+      | mk Param' Fld₁' Fld₂' Ret' GFld₁' GFld₂' RM' This' =>
+          cases hParam
+          cases hFld₁
+          cases hFld₂
+          cases hRet
+          cases hGFld₁
+          cases hGFld₂
+          cases hRM
+          cases hThis
+          rfl
+
+end Proof
+
 namespace Algorithm
 
 open Proof (Program Sigma GlobName ClassName OPair Idx Expr classes objects)
@@ -153,8 +181,6 @@ theorem glue_insert_sub {F : FixPoints} {G : GlobName} {σ : State G} {Sg : Sigm
     (K : Set OPair) : σ.addFldAt Idx.two C K =
       { σ with Fld₂ := fun C' => if C' = C then σ.Fld₂ C' ∪ K else σ.Fld₂ C' } := rfl
 
-/-! ### Bridging the per-global judgements to the global ones -/
-
 section Bridge
 variable {G : GlobName} {L : Program} {F : FixPoints} {Sg : Sigma} {σ : State G}
 
@@ -275,8 +301,6 @@ theorem re_bridge (hσ : State.Sub σ (State.ofSigma Sg G)) {c : Ctx} {e : Expr}
 
 end Bridge
 
-/-! ### A `Grow` step stays below any global fixpoint -/
-
 theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G} {Sg : Sigma}
     (hSg : Proof.FixPoint Sg L) (hF : Sigma.Sub F.glue Sg)
     (hσ : State.Sub σ (State.ofSigma Sg G)) (hg : Grow L F G σ σ') :
@@ -352,59 +376,134 @@ theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
       · exact hσ.this C' hx
       · exact ht C' (Set.image_mono hs₁ hC) (Set.image_mono hs₁ hx)
 
-/-! ### The invariant -/
-
-/-- The current config, c,  of the algorithm -- the fixpoints, the current state, and the suspended
-    states -- are all below Sg -/
-def Config.Below (c : Config) (Sg : Sigma) : Prop :=
+def Config.less (c : Config) (Sg : Sigma) : Prop :=
   match c with
-  | .mk G σ f S _ => f.glue ≤ Sg ∧ State.Sub σ (State.ofSigma Sg G) ∧
-      ∀ p ∈ S, State.Sub p.2 (State.ofSigma Sg p.1)
+  | .mk _ _ _ _ _ => c.all_data ≤ Sg
   | .done _ => True
   | .cycle _ => True
 
 def LessThanInv (c : Config) (L : Program) : Prop :=
-  ∀ σ : Proof.Sigma, Proof.FixPoint σ L → c.Below σ
+  ∀ σ : Proof.Sigma, Proof.FixPoint σ L → c.less σ
+
+theorem Config.all_data_zero {L : Program} {hL : L.WellFormed}
+    : (Config.start L hL).all_data = ⊥ := by
+  -- have h : (Config.start L hL).all_data ≤ ⊥ := by
+  --     simp [Config.all_data, Config.start]
+  --     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  --     · sorry
+  --     · sorry
+  --     · sorry
+  --     · sorry
+  --     · sorry
+  --     · sorry
+  --     · sorry
+  --     · sorry
+  -- exact (le_bot_iff : (Config.start L hL).all_data ≤ (⊥ : Sigma) ↔ (Config.start L hL).all_data = ⊥).mp h
+  change (Config.start L hL).all_data =
+      { Param := fun _ _ => ∅,
+        Fld₁  := fun _ _ => ∅,
+        Fld₂  := fun _ _ => ∅,
+        Ret   := fun _ _ => ∅,
+        GFld₁ := fun _ => ∅,
+        GFld₂ := fun _ => ∅,
+        RM    := fun _ => ∅,
+        This  := fun _ _ => ∅ }
+  apply Proof.Sigma.ext
+  · funext G C
+    by_cases hG : L.GlobNames.head hL.left = G
+    · subst hG
+      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero]
+    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero, hG]
+  · funext G C
+    by_cases hG : L.GlobNames.head hL.left = G
+    · subst hG
+      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero]
+    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero, hG]
+  · funext G C
+    by_cases hG : L.GlobNames.head hL.left = G
+    · subst hG
+      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero]
+    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero, hG]
+  · funext G C
+    by_cases hG : L.GlobNames.head hL.left = G
+    · subst hG
+      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero]
+    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero, hG]
+  · funext G
+    by_cases hG : L.GlobNames.head hL.left = G
+    · subst hG
+      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero]
+    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero, hG]
+  · funext G
+    by_cases hG : L.GlobNames.head hL.left = G
+    · subst hG
+      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero]
+    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero, hG]
+  · funext G
+    by_cases hG : L.GlobNames.head hL.left = G
+    · subst hG
+      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero]
+    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero, hG]
+  · funext G C
+    by_cases hG : L.GlobNames.head hL.left = G
+    · subst hG
+      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero]
+    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
+        Config.stack, Config.curState, Stack.find, State.zero, hG]
 
 theorem less_than_step {L : Program} {c c' : Config}
     (h : LessThanInv c L) (hstep : Solve L c c')
     : LessThanInv c' L := by
   intro Sg hSg
   cases hstep with
-  | @step G σ σ' F S Q hg =>
-      obtain ⟨hF, hσ, hS⟩ := h Sg hSg
-      exact ⟨hF, grow_sub hSg hF hσ hg, hS⟩
-  | @suspend G G₀ σ F S Q c e hre hne _ _ =>
-      obtain ⟨hF, hσ, hS⟩ := h Sg hSg
-      refine ⟨hF, State.zero_sub _, ?_⟩
-      intro p hp
-      cases hp with
-      | head => exact hσ
-      | tail _ hp => exact hS p hp
-  | cycle _ =>
-      trivial
-  | @resume G G' σ σ' F S Q _ =>
-      obtain ⟨hF, hσ, hS⟩ := h Sg hSg
-      refine ⟨glue_insert_sub hF hσ, hS ⟨G', σ'⟩ List.mem_cons_self, ?_⟩
-      exact fun p hp => hS p (List.mem_cons_of_mem _ hp)
-  | @next G G₀ σ F Q _ _ =>
-      obtain ⟨hF, hσ, _⟩ := h Sg hSg
-      exact ⟨glue_insert_sub hF hσ, State.zero_sub _, by simp⟩
-  | @skip G G₀ σ F Q _ =>
-      obtain ⟨hF, hσ, hS⟩ := h Sg hSg
-      exact ⟨hF, hσ, hS⟩
-  | @finish G σ F _ =>
-      trivial
+  | @step G σ σ' F S Q hg => sorry
+  --     have hgs := grow_sub hSg hF hσ hg
+  --     h Sg hSg
+  --     exact ⟨hF, grow_sub hSg hF hσ hg, hS⟩
+  | @suspend G G₀ σ F S Q c e hre hne _ _ => sorry
+  --     obtain ⟨hF, hσ, hS⟩ := h Sg hSg
+  --     refine ⟨hF, State.zero_sub _, ?_⟩
+  --     intro p hp
+  --     cases hp with
+  --     | head => exact hσ
+  --     | tail _ hp => exact hS p hp
+  | cycle _ => trivial
+  | @resume G G' σ σ' F S Q _ => sorry
+  --     obtain ⟨hF, hσ, hS⟩ := h Sg hSg
+  --     refine ⟨glue_insert_sub hF hσ, hS ⟨G', σ'⟩ List.mem_cons_self, ?_⟩
+  --     exact fun p hp => hS p (List.mem_cons_of_mem _ hp)
+  | @next G G₀ σ F Q _ _ => sorry
+  --     obtain ⟨hF, hσ, _⟩ := h Sg hSg
+  --     exact ⟨glue_insert_sub hF hσ, State.zero_sub _, by simp⟩
+  | @skip G G₀ σ F Q _ => sorry
+  --     obtain ⟨hF, hσ, hS⟩ := h Sg hSg
+  --     exact ⟨hF, hσ, hS⟩
+  | @finish G σ F _ => trivial
 
-theorem less_than {L : Program} (hL : L.HasMain) {c : Config}
+theorem less_than {L : Program} (hL : L.WellFormed) {c : Config}
     (hstar : Solve.Star L (Config.start L hL) c)
     : LessThanInv c L := by
   induction hstar with
   | refl =>
-    intro σ _
-    refine ⟨?_, State.zero_sub _, by simp⟩
-    simp only [FixPoints.glue_bot]
-    exact bot_le
+      intro σ _
+      change (Config.start L hL).all_data ≤ σ
+      rw [Config.all_data_zero (hL := hL)]
+      exact bot_le
   | tail hr hgrow ih => exact less_than_step ih hgrow
 
 theorem stack_find_sub {S : Stack} {Sg : Proof.Sigma}
@@ -430,177 +529,6 @@ theorem stack_find_sub {S : Stack} {Sg : Proof.Sigma}
             · intro p hp
               exact hS p (by simp [hp])
             · exact hfind'
-
-theorem config_below_imp_all_data_less_than  {c : Config} {σ : Proof.Sigma} (h: c.Below σ)
-    : c.all_data ≤ σ := by
-  rcases c with ⟨ G', σ', F, S, Q ⟩ | F | G'
-  · rcases h with ⟨hF, hσ, hS⟩
-    have hstack : ∀ {G₁ : GlobName} {τ : State G₁}, S.find G₁ = some τ → State.Sub τ (State.ofSigma σ G₁) := by
-      exact stack_find_sub hS
-    have hcur_sub :
-        ∀ {G₁ : GlobName} {τ : State G₁},
-          (Config.mk G' σ' F S Q).curState (G := G₁) = some τ →
-            State.Sub τ (State.ofSigma σ G₁) := by
-      intro G₁ τ hcur
-      change (if h : G' = G₁ then some (h ▸ σ') else none) = some τ at hcur
-      split at hcur
-      · rename_i hEq
-        cases hEq
-        cases hcur
-        exact hσ
-      · simp at hcur
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · intro G₁ C₁
-      simp [Config.all_data]
-      cases hfix : (Config.mk G' σ' F S Q).fixpoints G₁ with
-      | none =>
-          cases hcur : (Config.mk G' σ' F S Q).curState (G := G₁) with
-          | none =>
-              cases hstk : (Config.mk G' σ' F S Q).stack.find G₁ with
-              | none =>
-                  exact Set.empty_subset _
-              | some τ =>
-                  -- The stack entry is one of the states below `σ` by the induction invariant.
-                  have hτ : State.Sub τ (State.ofSigma σ G₁) := hstack hstk
-                  simpa [Config.all_data, hfix, hcur, hstk] using hτ.param C₁
-          | some τ =>
-              simpa [Config.all_data, Config.curState, hfix, hcur] using
-                (hcur_sub hcur).param C₁
-      | some τ =>
-          change F G₁ = some τ at hfix
-          have h := hF.param G₁ C₁
-          rw [FixPoints.glue_param hfix] at h
-          simpa [Config.all_data, hfix] using h
-    · intro G₁ C₁
-      simp [Config.all_data]
-      cases hfix : (Config.mk G' σ' F S Q).fixpoints G₁ with
-      | none =>
-          cases hcur : (Config.mk G' σ' F S Q).curState (G := G₁) with
-          | none =>
-              cases hstk : (Config.mk G' σ' F S Q).stack.find G₁ with
-              | none =>
-                  exact Set.empty_subset _
-              | some τ =>
-                  have hτ : State.Sub τ (State.ofSigma σ G₁) := hstack hstk
-                  simpa [Config.all_data, hfix, hcur, hstk] using hτ.fld₁ C₁
-          | some τ =>
-              simpa [Config.all_data, Config.curState, hfix, hcur] using
-                (hcur_sub hcur).fld₁ C₁
-      | some τ =>
-          change F G₁ = some τ at hfix
-          simpa [Config.all_data, FixPoints.glue, hfix] using hF.fld₁ G₁ C₁
-    · intro G₁ C₁
-      simp [Config.all_data]
-      cases hfix : (Config.mk G' σ' F S Q).fixpoints G₁ with
-      | none =>
-          cases hcur : (Config.mk G' σ' F S Q).curState (G := G₁) with
-          | none =>
-              cases hstk : (Config.mk G' σ' F S Q).stack.find G₁ with
-              | none =>
-                  exact Set.empty_subset _
-              | some τ =>
-                  have hτ : State.Sub τ (State.ofSigma σ G₁) := hstack hstk
-                  simpa [Config.all_data, hfix, hcur, hstk] using hτ.fld₂ C₁
-          | some τ =>
-              simpa [Config.all_data, Config.curState, hfix, hcur] using
-                (hcur_sub hcur).fld₂ C₁
-      | some τ =>
-          change F G₁ = some τ at hfix
-          simpa [Config.all_data, FixPoints.glue, hfix] using hF.fld₂ G₁ C₁
-    · intro G₁ C₁
-      simp [Config.all_data]
-      cases hfix : (Config.mk G' σ' F S Q).fixpoints G₁ with
-      | none =>
-          cases hcur : (Config.mk G' σ' F S Q).curState (G := G₁) with
-          | none =>
-              cases hstk : (Config.mk G' σ' F S Q).stack.find G₁ with
-              | none =>
-                  exact Set.empty_subset _
-              | some τ =>
-                  have hτ : State.Sub τ (State.ofSigma σ G₁) := hstack hstk
-                  simpa [Config.all_data, hfix, hcur, hstk] using hτ.ret C₁
-          | some τ =>
-              simpa [Config.all_data, Config.curState, hfix, hcur] using
-                (hcur_sub hcur).ret C₁
-      | some τ =>
-          change F G₁ = some τ at hfix
-          simpa [Config.all_data, FixPoints.glue, hfix] using hF.ret G₁ C₁
-    · intro G₁
-      simp [Config.all_data]
-      cases hfix : (Config.mk G' σ' F S Q).fixpoints G₁ with
-      | none =>
-          cases hcur : (Config.mk G' σ' F S Q).curState (G := G₁) with
-          | none =>
-              cases hstk : (Config.mk G' σ' F S Q).stack.find G₁ with
-              | none =>
-                  exact Set.empty_subset _
-              | some τ =>
-                  have hτ : State.Sub τ (State.ofSigma σ G₁) := hstack hstk
-                  simpa [Config.all_data, hfix, hcur, hstk] using hτ.gfld₁
-          | some τ =>
-              simpa [Config.all_data, Config.curState, hfix, hcur] using
-                (hcur_sub hcur).gfld₁
-      | some τ =>
-          change F G₁ = some τ at hfix
-          simpa [Config.all_data, FixPoints.glue, hfix] using hF.gfld₁ G₁
-    · intro G₁
-      simp [Config.all_data]
-      cases hfix : (Config.mk G' σ' F S Q).fixpoints G₁ with
-      | none =>
-          cases hcur : (Config.mk G' σ' F S Q).curState (G := G₁) with
-          | none =>
-              cases hstk : (Config.mk G' σ' F S Q).stack.find G₁ with
-              | none =>
-                  exact Set.empty_subset _
-              | some τ =>
-                  have hτ : State.Sub τ (State.ofSigma σ G₁) := hstack hstk
-                  simpa [Config.all_data, hfix, hcur, hstk] using hτ.gfld₂
-          | some τ =>
-              simpa [Config.all_data, Config.curState, hfix, hcur] using
-                (hcur_sub hcur).gfld₂
-      | some τ =>
-          change F G₁ = some τ at hfix
-          simpa [Config.all_data, FixPoints.glue, hfix] using hF.gfld₂ G₁
-    · intro G₁
-      simp [Config.all_data]
-      cases hfix : (Config.mk G' σ' F S Q).fixpoints G₁ with
-      | none =>
-          cases hcur : (Config.mk G' σ' F S Q).curState (G := G₁) with
-          | none =>
-              cases hstk : (Config.mk G' σ' F S Q).stack.find G₁ with
-              | none =>
-                  exact Set.empty_subset _
-              | some τ =>
-                  have hτ : State.Sub τ (State.ofSigma σ G₁) := hstack hstk
-                  simpa [Config.all_data, hfix, hcur, hstk] using hτ.rm
-          | some τ =>
-              simpa [Config.all_data, Config.curState, hfix, hcur] using
-                (hcur_sub hcur).rm
-      | some τ =>
-          change F G₁ = some τ at hfix
-          simpa [Config.all_data, FixPoints.glue, hfix] using hF.rm G₁
-    · intro G₁ C₁
-      simp [Config.all_data]
-      cases hfix : (Config.mk G' σ' F S Q).fixpoints G₁ with
-      | none =>
-          cases hcur : (Config.mk G' σ' F S Q).curState (G := G₁) with
-          | none =>
-              cases hstk : (Config.mk G' σ' F S Q).stack.find G₁ with
-              | none =>
-                  exact Set.empty_subset _
-              | some τ =>
-                  have hτ : State.Sub τ (State.ofSigma σ G₁) := hstack hstk
-                  simpa [Config.all_data, hfix, hcur, hstk] using hτ.this C₁
-          | some τ =>
-              simpa [Config.all_data, Config.curState, hfix, hcur] using
-                (hcur_sub hcur).this C₁
-      | some τ =>
-          change F G₁ = some τ at hfix
-          simpa [Config.all_data, FixPoints.glue, hfix] using hF.this G₁ C₁
-  ·
-    simp [Config.all_data]
-    sorry
-  · sorry
 
 theorem less_than_imp_re_less_than {σ σ': Proof.Sigma} {L : Program}
     {G : GlobName} {ctx : Proof.Ctx} {E : Expr} (hl : σ ≤ σ') (h : Proof.RE σ L G ctx E) :

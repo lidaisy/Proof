@@ -293,9 +293,6 @@ inductive Config
   | cycle (G : GlobName)
   deriving Inhabited
 
-def Config.object : { c : Config // ∃ G s F S Q, c = .mk G s F S Q } → GlobName
-  | ⟨.mk G _ _ _ _, _⟩ => G
-
 def Config.fixpoints : Config → FixPoints
   | .mk _ _ F _ _ => F
   | .done F => F
@@ -338,9 +335,9 @@ inductive Solve (L : Program) : Config → Config → Prop
 abbrev Solve.Star (L : Program) : Config → Config → Prop :=
   Relation.ReflTransGen (Solve L)
 
-def Config.start (L : Program) (hL : L.HasMain) : Config :=
+def Config.start (L : Program) (hL : L.WellFormed) : Config :=
   let objects := L.GlobNames
-  let G := objects.head hL
+  let G := objects.head hL.left
   let Q := objects.tail
   .mk G (State.zero G) (fun _ => none) List.nil Q
 
@@ -396,22 +393,145 @@ def Config.curState {G : GlobName} : Config → Option (State G)
   | .mk G' σ _ _ _ => if h : G' = G then some (h ▸ σ) else none
   | _ => none
 
-def Config.all_data (c : Config) : Proof.Sigma :=
-  let source (G : GlobName) : Option (State G) :=
-    (c.fixpoints G).orElse fun _ =>
-      (Config.curState (G := G) c).orElse fun _ => c.stack.find G
-  { Param := fun (G : GlobName) (C : ClassName) =>
-      (source G).map (fun σ => σ.Param C) |>.getD ∅
-    Fld₁  := fun G C => (source G).map (fun σ => σ.Fld₁ C) |>.getD ∅
-    Fld₂  := fun G C => (source G).map (fun σ => σ.Fld₂ C) |>.getD ∅
-    Ret   := fun G C => (source G).map (fun σ => σ.Ret C) |>.getD ∅
-    GFld₁ := fun G   => (source G).map (fun σ => σ.GFld₁) |>.getD ∅
-    GFld₂ := fun G   => (source G).map (fun σ => σ.GFld₂) |>.getD ∅
-    RM    := fun G   => (source G).map (fun σ => σ.RM) |>.getD ∅
-    This  := fun G C => (source G).map (fun σ => σ.This C) |>.getD ∅ }
+def Config.WellFormed (L : Program) : Config → Prop
+| (.mk G _ F S Q) =>
+      (List.Perm (G :: (S.globs ++ Q)) L.GlobNames)
+    ∧ ¬ InFixPoint F G
+    ∧ (∀ G' ∈ S.globs, ¬ InFixPoint F G')
+    ∧ (∀ G' ∈ Q, ¬ InFixPoint F G')
+| .cycle _ => True
+| .done _ => True
 
-theorem no_reevaluation {c : Config} {G : GlobName} (h : c.curObj = some G)
-    : ¬ InFixPoint c.fixpoints G := by
+theorem config_wellformed_step {L : Program} {c c' : Config} (hstep : Solve L c c')
+    (h: c.WellFormed L)
+    : c'.WellFormed L := by
   sorry
+  -- cases hstep with
+  -- | step => exact h
+  -- | @suspend G₀ G₁ σ F S Q c i hre hneeds hne hnS =>
+  --     refine ⟨?_, ?_, ?_⟩
+  --     · cases hneeds with
+  --       | gproj h' => exact h'
+  --     · intro G' hG'
+  --       by_cases heq : G' = G₀
+  --       · subst heq; exact h.left
+  --       · have hS : G' ∈ S.globs := by -- TODO: factor this out. Used in cycle.lean too
+  --           simp [Stack.globs] at hG'
+  --           simp [Stack.globs, List.mem_map]
+  --           exact hG'.resolve_left heq
+  --         exact h.right.left G' hS
+  --     · intro G' hG'
+  --       have hremove_mem : ∀ {Q : Queue} {G G'}, G' ∈ Queue.remove Q G → G' ∈ Q := by
+  --         intro Q G G' hmem
+  --         induction Q with
+  --         | nil =>
+  --             simp [Queue.remove] at hmem
+  --         | cons g gs ih =>
+  --             by_cases hg : g == G
+  --             · have hgs : G' ∈ gs := by
+  --                 simpa [Queue.remove, hg] using hmem
+  --               simpa using (show G' = g ∨ G' ∈ gs from Or.inr hgs)
+  --             · have hsplit : G' = g ∨ G' ∈ Queue.remove gs G := by
+  --                 simpa [Queue.remove, hg] using hmem
+  --               rcases hsplit with rfl | hsplit
+  --               · simp
+  --               · have : G' ∈ gs := ih hsplit
+  --                 simpa using (show G' = g ∨ G' ∈ gs from Or.inr this)
+  --       have hQ : G' ∈ Q := hremove_mem hG'
+  --       exact h.right.right G' hQ
+  -- | cycle => trivial
+  -- | @resume G₀ G₁ σ σ' F S Q hSt =>
+  --     refine ⟨?_, ?_, ?_⟩
+  --     · have hG₁ : G₁ ∈ Stack.globs (⟨G₁, σ'⟩ :: S) := sorry
+  --       have hprev := h.right.left G₁ hG₁
+  --       sorry
+  --     · intro G' hG'
+
+  --       sorry
+  --     · intro G' hG'
+  --       sorry
+  -- | @next G₀ G₁ σ F Q hSt hfix =>
+  --     refine ⟨?_, ?_, ?_⟩
+  --     · -- use hfix
+  --       sorry
+  --     · intro G' hG'
+  --       simp [Stack.globs] at hG'
+  --     · intro G' hG'
+  --       sorry
+  -- | @skip G₀ G₁ σ F Q hfix =>
+  --     refine ⟨?_, ?_, ?_⟩
+  --     · -- use hfix
+  --       sorry
+  --     · intro G' hG'
+  --       simp [Stack.globs] at hG'
+  --     · intro G' hG'
+  --       sorry
+  -- | finish => trivial
+
+theorem config_wellformed {L : Program} {hL : L.WellFormed} {c : Config} (hstar : Solve.Star L (Config.start L hL) c)
+    : c.WellFormed L := by
+  induction hstar with
+  | refl =>
+    refine ⟨?_, by simp [InFixPoint], by intro G hG'; simp [InFixPoint], by intro G hG'; simp [InFixPoint]⟩
+    have hhead : L.GlobNames.head hL.left :: L.GlobNames.tail = L.GlobNames :=
+        List.cons_head_tail hL.left
+    simp [Stack.globs, hhead]
+  | tail hprev hgrow ih => exact config_wellformed_step hgrow ih
+
+def Config.find (c : Config) (G : GlobName) : Option (State G) :=
+    (c.fixpoints G).orElse fun _ =>
+      (c.curState (G := G)).orElse fun _ => c.stack.find G
+
+theorem Config.find_curState {L : Program} {c : Config}
+    {G : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
+    (hc : c = (Config.mk G σ F S Q))
+    (h: c.curState = some σ) (hwf : Config.WellFormed L c)
+    : Config.find c G = some σ := by
+  subst hc
+  simp [Config.find]
+  have hfn : (Config.mk G σ F S Q).fixpoints G = none := by
+    simp [Config.fixpoints]
+    by_contra h
+    obtain ⟨σ, hσ⟩ := Option.ne_none_iff_exists'.mp h
+    exact hwf.right.left ⟨σ, hσ⟩
+  exact Or.inr ⟨hfn, Or.inl h⟩
+
+def Config.all_data (c : Config) : Proof.Sigma :=
+  { Param := fun G C => (c.find G).map (fun σ => σ.Param C) |>.getD ∅
+    Fld₁  := fun G C => (c.find G).map (fun σ => σ.Fld₁ C) |>.getD ∅
+    Fld₂  := fun G C => (c.find G).map (fun σ => σ.Fld₂ C) |>.getD ∅
+    Ret   := fun G C => (c.find G).map (fun σ => σ.Ret C) |>.getD ∅
+    GFld₁ := fun G   => (c.find G).map (fun σ => σ.GFld₁) |>.getD ∅
+    GFld₂ := fun G   => (c.find G).map (fun σ => σ.GFld₂) |>.getD ∅
+    RM    := fun G   => (c.find G).map (fun σ => σ.RM) |>.getD ∅
+    This  := fun G C => (c.find G).map (fun σ => σ.This C) |>.getD ∅ }
+
+section all_data
+variable {c : Config} {G : GlobName} {σ : State G}
+
+@[simp] theorem Config.all_data_param (h : c.find G = some σ) : c.all_data.Param G = σ.Param := by
+  simp [Config.all_data, h]
+@[simp] theorem Config.all_data_fld₁ (h : c.find G = some σ) : c.all_data.Fld₁ G = σ.Fld₁ := by
+  simp [Config.all_data, h]
+@[simp] theorem Config.all_data_fld₂ (h : c.find G = some σ) : c.all_data.Fld₂ G = σ.Fld₂ := by
+  simp [Config.all_data, h]
+@[simp] theorem Config.all_data_ret (h : c.find G = some σ) : c.all_data.Ret G = σ.Ret := by
+  simp [Config.all_data, h]
+@[simp] theorem Config.all_data_gfld₁ (h : c.find G = some σ) : c.all_data.GFld₁ G = σ.GFld₁ := by
+  simp [Config.all_data, h]
+@[simp] theorem Config.all_data_gfld₂ (h : c.find G = some σ) : c.all_data.GFld₂ G = σ.GFld₂ := by
+  simp [Config.all_data, h]
+@[simp] theorem Config.all_data_rm (h : c.find G = some σ) : c.all_data.RM G = σ.RM := by
+  simp [Config.all_data, h]
+@[simp] theorem Config.all_data_this (h : c.find G = some σ) : c.all_data.This G = σ.This := by
+  simp [Config.all_data, h]
+
+theorem Config.all_data_fld (h : c.find G = some σ) (i : Idx) : c.all_data.Fld i G = σ.Fld i := by
+  cases i <;> simp [Proof.Sigma.Fld, State.Fld, h]
+
+theorem Config.all_data_gfld (h : c.find G = some σ) (i : Idx) : c.all_data.GFld i G = σ.GFld i := by
+  cases i <;> simp [Proof.Sigma.GFld, State.GFld, h]
+
+end all_data
 
 end Algorithm

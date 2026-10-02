@@ -5,14 +5,14 @@ namespace Algorithm
 
 open Proof (Program GlobName)
 
-theorem algo_no_cycle_then_no_dep {L : Program} {G : GlobName} {hL : L.HasMain}
+theorem algo_no_cycle_then_no_dep {L : Program} {G : GlobName} {hL : L.WellFormed}
     : ¬(∃ G, Solve.Star L (Config.start L hL) (Config.cycle G)) →
       ∃ F, Solve.Star L (Config.start L hL) (Config.done F) ∧
       ¬ ∃ G', G' ∈ Proof.Dep F.glue L G' := by
   -- first part by solve_terminates
   sorry
 
-theorem algo_detects_decl_cycle {L : Program} {hL : L.HasMain} {G : GlobName}
+theorem algo_detects_decl_cycle {L : Program} {hL : L.WellFormed} {G : GlobName}
     : ∃ G, ∀ σ : Proof.Sigma, Proof.FixPoint σ L → G ∈ Proof.Dep σ L G →
       ∃ G', Solve.Star L (Config.start L hL) (.cycle G') := by
   -- the above states that exist a fixpoint (by solve_done_fixpoint) with

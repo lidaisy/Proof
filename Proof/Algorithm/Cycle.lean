@@ -13,9 +13,32 @@ def StackDep (L : Program) : Config → Prop
   | .done _ => True
 
 theorem Config.all_data_grow {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
-    {S : Stack} {Q : Queue} (hgrow : Grow L F G σ σ')
+    {S : Stack} {Q : Queue}
+    (hwf : Config.WellFormed L (.mk G σ F S Q)) (hwf' : Config.WellFormed L (.mk G σ' F S Q))
+    (hgrow : Grow L F G σ σ')
     : Config.all_data (.mk G σ F S Q) ≤ Config.all_data (.mk G σ' F S Q) := by
-  sorry
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro G' C'
+    -- break G' into cases. It's in fixpoints, it's equal to G (curState), or it's in stack
+    have h := (Config.mk G σ F S Q).all_data_param (Config.find_curState (rfl) (by simp [Config.curState]) hwf)
+    have h' := (Config.mk G σ' F S Q).all_data_param (Config.find_curState (rfl) (by simp [Config.curState]) hwf')
+    induction hgrow with
+    | rmInit =>
+      sorry
+    | rmClosed => sorry
+    | retInit => sorry
+    | gfldOne => sorry
+    | gfldTwo => sorry
+    | fld => sorry
+    | param => sorry
+    | thisG => sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
 
 theorem Config.stack_to_all {L : Program} {G G' : GlobName} {σ' : State G'} {σ : State G} {F : FixPoints} {ctx : Ctx}
     {E : Expr } {S : Stack} {Q : Queue} (h : RE G' σ' L ctx E) (hS : G' ∈ S.globs)
@@ -35,11 +58,12 @@ theorem Config.all_data_resume {L : Program} {G G' : GlobName} {σ' : State G'} 
         Config.all_data (.mk G' σ' (F.insert G σ) S Q):= by
   sorry
 
-theorem stack_dep_step {c c' : Config} {L : Program} (hstep : Solve L c c')
-    (h : StackDep L c) : StackDep L c' := by
+theorem stack_dep_step {c c' : Config} {L : Program}
+    (hwf : Config.WellFormed L c) (hwf' : Config.WellFormed L c')
+    (hstep : Solve L c c') (h : StackDep L c) : StackDep L c' := by
   cases hstep with
   | @step G σ σ' F S Q hg =>
-      have hless := Config.all_data_grow (S := S) (Q := Q) hg
+      have hless := Config.all_data_grow (S := S) (Q := Q) hwf hwf' hg
       refine ⟨?_, ?_⟩
       · intro G' hG'
         have hDep := h.left G' hG'
@@ -138,22 +162,69 @@ theorem stack_dep_step {c c' : Config} {L : Program} (hstep : Solve L c c')
   | finish =>
       trivial
 
-theorem stack_dep_star {c : Config} {L : Program} {hL : L.HasMain}
+theorem stack_dep_star {c : Config} {L : Program} {hL : L.WellFormed}
     (hstar : Solve.Star L (Config.start L hL) c) :
-    StackDep L c := sorry
+    StackDep L c := by
+  induction hstar with
+  | refl =>
+    refine ⟨?_, ?_⟩
+    · intro G hG
+      simp [Stack.globs] at hG
+    · intro aft G bef hG _ _
+      simp [Stack.globs] at hG
+  | tail hprev hgrow ih =>
+    exact stack_dep_step (config_wellformed hprev)
+      (config_wellformed (Relation.ReflTransGen.tail hprev hgrow)) hgrow ih
 
-theorem Config.state_to_all {L : Program} {G' G : GlobName} {σ' : State G'} {F : FixPoints} {ctx : Ctx}
-    {S : Stack} {Q : Queue} {i : Idx} (h : RE G' σ' L ctx (Expr.gproj G i))
+theorem Config.state_to_all {L : Program} {hL : L.WellFormed} {G' G : GlobName} {σ' : State G'}
+    {F : FixPoints} {ctx : Ctx} {S : Stack} {Q : Queue} {i : Idx}
+    (hstar : Solve.Star L (Config.start L hL) (Config.mk G' σ' F S Q))
+    (h : RE G' σ' L ctx (Expr.gproj G i))
     : Proof.RE (Config.mk G' σ' F S Q).all_data L G' ctx (Expr.gproj G i) := by
-  let conf := (Config.mk G' σ' F S Q)
-  have hnotFix := by
-    simpa [Config.curObj] using (no_reevaluation (c := conf) (G := G') (h := by rfl))
-  have hsubeq : State.Sub σ' (State.ofSigma conf.all_data G') := by
-   sorry
-  subst conf
+  have hsubeq : State.Sub σ' (State.ofSigma (Config.mk G' σ' F S Q).all_data G') := by
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · intro C
+      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').Param = σ'.Param := by
+        simp [State.ofSigma]
+        exact (Config.mk G' σ' F S Q).all_data_param (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+      rw [heq]
+    · intro C
+      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').Fld₁ = σ'.Fld₁ := by
+        simp [State.ofSigma]
+        exact (Config.mk G' σ' F S Q).all_data_fld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+      rw [heq]
+    · intro C
+      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').Fld₂ = σ'.Fld₂ := by
+        simp [State.ofSigma]
+        exact (Config.mk G' σ' F S Q).all_data_fld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+      rw [heq]
+    · intro C
+      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').Ret = σ'.Ret := by
+        simp [State.ofSigma]
+        exact (Config.mk G' σ' F S Q).all_data_ret (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+      rw [heq]
+    · have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').GFld₁ = σ'.GFld₁ := by
+        simp [State.ofSigma]
+        exact (Config.mk G' σ' F S Q).all_data_gfld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+      rw [heq]
+    · have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').GFld₂ = σ'.GFld₂:= by
+        simp [State.ofSigma]
+        exact (Config.mk G' σ' F S Q).all_data_gfld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+      rw [heq]
+    · intro C hRM
+      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').RM = σ'.RM := by
+        simp [State.ofSigma]
+        exact (Config.mk G' σ' F S Q).all_data_rm (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+      rw [heq]
+      exact hRM
+    · intro C
+      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').This = σ'.This := by
+        simp [State.ofSigma]
+        exact (Config.mk G' σ' F S Q).all_data_this (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+      rw [heq]
   exact re_bridge hsubeq h
 
-theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
+theorem report_cycle_then_dep {L : Program} {hL : L.WellFormed} :
     ∀ G, Solve.Star L (Config.start L hL) (.cycle G) →
     ∀ σ : Proof.Sigma, Proof.FixPoint σ L → G ∈ Proof.Dep σ L G := by
   intro G hcyc σ hf
@@ -164,11 +235,10 @@ theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
     | cycle hSRE hneeds hG =>
       rename_i c i
       have hl := (less_than hL h_star) σ hf
-      have hbelow := config_below_imp_all_data_less_than hl
       let c_prev := (Config.mk G' σ' F S Q)
       let c_prev_data := c_prev.all_data
       have hCRE : Proof.RE c_prev_data L G' c (Expr.gproj G i) := by
-        simpa [c_prev, c_prev_data] using (Config.state_to_all hSRE)
+        simpa [c_prev, c_prev_data] using (Config.state_to_all h_star hSRE)
       have hCDep : G ∈ Proof.Dep c_prev_data L G' := Proof.DepJ.direct hCRE
       have hCCyc : G ∈ Proof.Dep c_prev_data L G := by
         rcases hG with hG' | hG'
@@ -177,7 +247,7 @@ theorem report_cycle_then_dep {L : Program} {hL : L.HasMain} :
         · have hADep : G' ∈ Proof.Dep c_prev_data L G := by
             exact (stack_dep_star h_star).left G hG'
           exact Proof.DepJ.trans hADep hCDep
-      exact less_than_imp_dep_less_than hbelow hCCyc
+      exact less_than_imp_dep_less_than hl hCCyc
   · cases h_step
   · cases h_step
 

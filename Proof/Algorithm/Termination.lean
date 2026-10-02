@@ -33,7 +33,7 @@ theorem solve_progress {L : Program} {G : GlobName} {σ : State G} {F : FixPoint
         exact ⟨_, Solve.suspend hre hneeds hcyc.1 hcyc.2⟩
 
 theorem solve_terminates {L : Program} {G : GlobName}
-    {hL : L.HasMain}
+    {hL : L.WellFormed}
     (hcyc : ¬(Solve.Star L (Config.start L hL) (Config.cycle G)))
     : ∃ F, Solve.Star L (Config.start L hL) (Config.done F) := by
   -- apply solve_progress and we get c'
