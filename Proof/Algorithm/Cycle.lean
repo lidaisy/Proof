@@ -223,48 +223,7 @@ theorem Config.state_to_all {L : Program} {hL : L.WellFormed} {G' G : GlobName} 
     (hstar : Solve.Star L (Config.start L hL) (Config.mk G' σ' F S Q))
     (h : RE G' σ' L ctx (Expr.gproj G i))
     : Proof.RE (Config.mk G' σ' F S Q).all_data L G' ctx (Expr.gproj G i) := by
-  have hsubeq : State.Sub σ' (State.ofSigma (Config.mk G' σ' F S Q).all_data G') := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · intro C
-      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').Param = σ'.Param := by
-        simp [State.ofSigma]
-        exact (Config.mk G' σ' F S Q).all_data_param (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-      rw [heq]
-    · intro C
-      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').Fld₁ = σ'.Fld₁ := by
-        simp [State.ofSigma]
-        exact (Config.mk G' σ' F S Q).all_data_fld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-      rw [heq]
-    · intro C
-      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').Fld₂ = σ'.Fld₂ := by
-        simp [State.ofSigma]
-        exact (Config.mk G' σ' F S Q).all_data_fld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-      rw [heq]
-    · intro C
-      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').Ret = σ'.Ret := by
-        simp [State.ofSigma]
-        exact (Config.mk G' σ' F S Q).all_data_ret (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-      rw [heq]
-    · have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').GFld₁ = σ'.GFld₁ := by
-        simp [State.ofSigma]
-        exact (Config.mk G' σ' F S Q).all_data_gfld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-      rw [heq]
-    · have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').GFld₂ = σ'.GFld₂:= by
-        simp [State.ofSigma]
-        exact (Config.mk G' σ' F S Q).all_data_gfld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-      rw [heq]
-    · intro C hRM
-      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').RM = σ'.RM := by
-        simp [State.ofSigma]
-        exact (Config.mk G' σ' F S Q).all_data_rm (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-      rw [heq]
-      exact hRM
-    · intro C
-      have heq : (State.ofSigma (Config.mk G' σ' F S Q).all_data G').This = σ'.This := by
-        simp [State.ofSigma]
-        exact (Config.mk G' σ' F S Q).all_data_this (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-      rw [heq]
-  exact re_bridge hsubeq h
+  exact re_bridge (Config.all_data_state hstar) h
 
 theorem report_cycle_then_dep {L : Program} {hL : L.WellFormed} :
     ∀ G, Solve.Star L (Config.start L hL) (.cycle G) →

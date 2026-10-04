@@ -295,9 +295,9 @@ inductive Grow (L : Program) (F : FixPoints) (G : GlobName) : State G → State 
   | gfldTwo {σ e₁ e₂ K₂ D₂} :
       Program.HasObject L G e₁ e₂ → (hK : KJ0 σ L F e₂ K₂ D₂) →
       Grow L F G σ { σ with GFld₂ := σ.GFld₂ ∪ K₂ }
-  | fld {σ c Dc e₁ e₂ K₁ K₂ D₁ D₂} :
-      RE G σ L c (Expr.newC Dc e₁ e₂) → (hK₁ : KJC σ L F c e₁ K₁ D₁) → (hK₂ : KJC σ L F c e₂ K₂ D₂) →
-      Grow L F G σ ((σ.addFldAt Idx.one Dc K₁).addFldAt Idx.two Dc K₂)
+  | fld {σ c C e₁ e₂ K₁ K₂ D₁ D₂} :
+      RE G σ L c (Expr.newC C e₁ e₂) → (hK₁ : KJC σ L F c e₁ K₁ D₁) → (hK₂ : KJC σ L F c e₂ K₂ D₂) →
+      Grow L F G σ ((σ.addFldAt Idx.one C K₁).addFldAt Idx.two C K₂)
   | param {σ c e₁ e₂ K₁ K₂ D₁ D₂} :
       RE G σ L c (Expr.app e₁ e₂) → (hK₁ : KJC σ L F c e₁ K₁ D₁) → (hK₂ : KJC σ L F c e₂ K₂ D₂) →
       Grow L F G σ (σ.addParamAt (classes K₁) K₂)
@@ -311,39 +311,44 @@ theorem grow_le {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro G' C'
     induction hgrow with
-    | @rmInit e₁ e₂ K₁ K₂ hG hC₁ hC₂ => simp [State.addRM]
+    | rmInit => simp [State.addRM]
     | rmClosed => simp [State.addRM]
     | retInit => simp [State.addRet]
     | gfldOne => simp
     | gfldTwo => simp
     | fld => simp [State.addFldAt]
-    | param => simp [State.addParamAt]; sorry
+    | param => simp [State.addParamAt]; intro h; exact Or.inl h
     | thisG => simp [State.addThisAt]
   · intro G' C'
     induction hgrow with
-    | @rmInit e₁ e₂ K₁ K₂ hG hC₁ hC₂ => simp [State.addRM]
+    | rmInit => simp [State.addRM]
     | rmClosed => simp [State.addRM]
     | retInit => simp [State.addRet]
     | gfldOne => simp
     | gfldTwo => simp
-    | fld => sorry --simp [State.addFldAt]
+    | @fld ctx C e₁ e₂ K₁ K₂ D₁ D₂ hRE hK₁ hK₂ =>
+        simp [State.addFldAt]
+        intro h
+        split
+        simp [h]
+        simp [h]
     | param => simp [State.addParamAt]
     | thisG => simp [State.addThisAt]
   · intro G' C'
     induction hgrow with
-    | @rmInit e₁ e₂ K₁ K₂ hG hC₁ hC₂ => simp [State.addRM]
+    | rmInit => simp [State.addRM]
     | rmClosed => simp [State.addRM]
     | retInit => simp [State.addRet]
     | gfldOne => simp
     | gfldTwo => simp
-    | fld => sorry --imp [State.addFldAt]
+    | fld => simp [State.addFldAt]; intro h; split; simp [h]; simp [h]
     | param => simp [State.addParamAt]
     | thisG => simp [State.addThisAt]
   · intro G' C'
     induction hgrow with
-    | @rmInit e₁ e₂ K₁ K₂ hG hC₁ hC₂ => simp [State.addRM]
+    | rmInit => simp [State.addRM]
     | rmClosed => simp [State.addRM]
-    | retInit => sorry --simp [State.addRet]
+    | retInit => simp [State.addRet]; intro h; split; simp [h]; simp [h]
     | gfldOne => simp
     | gfldTwo => simp
     | fld => simp [State.addFldAt]
@@ -351,28 +356,28 @@ theorem grow_le {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
     | thisG => simp [State.addThisAt]
   · intro G'
     induction hgrow with
-    | @rmInit e₁ e₂ K₁ K₂ hG hC₁ hC₂ => simp [State.addRM]
+    | rmInit => simp [State.addRM]
     | rmClosed => simp [State.addRM]
     | retInit => simp [State.addRet]
-    | gfldOne => sorry -- simp
+    | gfldOne => simp; intro h; exact Or.inl h
     | gfldTwo => simp
     | fld => simp [State.addFldAt]
     | param => simp [State.addParamAt]
     | thisG => simp [State.addThisAt]
   · intro G'
     induction hgrow with
-    | @rmInit e₁ e₂ K₁ K₂ hG hC₁ hC₂ => simp [State.addRM]
+    | rmInit => simp [State.addRM]
     | rmClosed => simp [State.addRM]
     | retInit => simp [State.addRet]
     | gfldOne => simp
-    | gfldTwo => sorry --simp
+    | gfldTwo => simp; intro h; exact Or.inl h
     | fld => simp [State.addFldAt]
     | param => simp [State.addParamAt]
     | thisG => simp [State.addThisAt]
   · intro G'
     induction hgrow with
-    | @rmInit e₁ e₂ K₁ K₂ hG hC₁ hC₂ => sorry -- simp [State.addRM]
-    | rmClosed => sorry -- simp [State.addRM]
+    | rmInit => simp [State.addRM]; intro h; exact Or.inl h
+    | rmClosed => simp [State.addRM]; intro h; exact Or.inl h
     | retInit => simp [State.addRet]
     | gfldOne => simp
     | gfldTwo => simp
@@ -381,14 +386,14 @@ theorem grow_le {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
     | thisG => simp [State.addThisAt]
   · intro G' C'
     induction hgrow with
-    | @rmInit e₁ e₂ K₁ K₂ hG hC₁ hC₂ => simp [State.addRM]
+    | rmInit => simp [State.addRM]
     | rmClosed => simp [State.addRM]
     | retInit => simp [State.addRet]
     | gfldOne => simp
     | gfldTwo => simp
     | fld => simp [State.addFldAt]
     | param => simp [State.addParamAt]
-    | thisG => sorry -- simp [State.addThisAt]
+    | thisG => simp [State.addThisAt]; intro h; exact Or.inl h
 
 def Stable (L : Program) (F : FixPoints) (G : GlobName) (σ : State G) : Prop :=
   (∀ σ', Grow L F G σ σ' → σ' ≤ σ) ∧
@@ -661,49 +666,48 @@ def State.ofSigma (Sg : Sigma) (G : GlobName) : State G where
   RM    := Sg.RM G
   This  := Sg.This G
 
-theorem Config.all_data_state {G : GlobName} {σ : State G} {F : FixPoints}
-    {S : Stack} {Q : Queue}
-    : σ = (State.ofSigma (Config.mk G σ F S Q).all_data G) := by
-  -- simp [State.ofSigma]
-  -- refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  -- · intro C
-  --   have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).Param = σ.Param := by
-  --     simp [State.ofSigma]
-  --     exact (Config.mk G σ F S Q).all_data_param (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-  --   rw [heq]
-  -- · intro C
-  --   have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).Fld₁ = σ.Fld₁ := by
-  --     simp [State.ofSigma]
-  --     exact (Config.mk G σ F S Q).all_data_fld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-  --   rw [heq]
-  -- · intro C
-  --   have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).Fld₂ = σ.Fld₂ := by
-  --     simp [State.ofSigma]
-  --     exact (Config.mk G σ F S Q).all_data_fld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-  --   rw [heq]
-  -- · intro C
-  --   have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).Ret = σ.Ret := by
-  --     simp [State.ofSigma]
-  --     exact (Config.mk G σ F S Q).all_data_ret (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-  --   rw [heq]
-  -- · have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).GFld₁ = σ.GFld₁ := by
-  --     simp [State.ofSigma]
-  --     exact (Config.mk G σ F S Q).all_data_gfld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-  --   rw [heq]
-  -- · have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).GFld₂ = σ.GFld₂:= by
-  --     simp [State.ofSigma]
-  --     exact (Config.mk G σ F S Q).all_data_gfld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-  --   rw [heq]
-  -- · intro C hRM
-  --   have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).RM = σ.RM := by
-  --     simp [State.ofSigma]
-  --     exact (Config.mk G σ F S Q).all_data_rm (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-  --   rw [heq]
-  --   exact hRM
-  -- · intro C
-  --   have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).This = σ.This := by
-  --     simp [State.ofSigma]
-  --     exact (Config.mk G σ F S Q).all_data_this (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
-  sorry
+theorem Config.all_data_state {L : Program} {hL : L.WellFormed} {G : GlobName} {σ : State G} {F : FixPoints}
+    {S : Stack} {Q : Queue} (hstar : Solve.Star L (Config.start L hL) (Config.mk G σ F S Q))
+    : State.Sub σ (State.ofSigma (Config.mk G σ F S Q).all_data G) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro C
+    have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).Param = σ.Param := by
+      simp [State.ofSigma]
+      exact (Config.mk G σ F S Q).all_data_param (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+    rw [heq]
+  · intro C
+    have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).Fld₁ = σ.Fld₁ := by
+      simp [State.ofSigma]
+      exact (Config.mk G σ F S Q).all_data_fld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+    rw [heq]
+  · intro C
+    have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).Fld₂ = σ.Fld₂ := by
+      simp [State.ofSigma]
+      exact (Config.mk G σ F S Q).all_data_fld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+    rw [heq]
+  · intro C
+    have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).Ret = σ.Ret := by
+      simp [State.ofSigma]
+      exact (Config.mk G σ F S Q).all_data_ret (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+    rw [heq]
+  · have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).GFld₁ = σ.GFld₁ := by
+      simp [State.ofSigma]
+      exact (Config.mk G σ F S Q).all_data_gfld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+    rw [heq]
+  · have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).GFld₂ = σ.GFld₂:= by
+      simp [State.ofSigma]
+      exact (Config.mk G σ F S Q).all_data_gfld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+    rw [heq]
+  · intro C hRM
+    have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).RM = σ.RM := by
+      simp [State.ofSigma]
+      exact (Config.mk G σ F S Q).all_data_rm (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+    rw [heq]
+    exact hRM
+  · intro C
+    have heq : (State.ofSigma (Config.mk G σ F S Q).all_data G).This = σ.This := by
+      simp [State.ofSigma]
+      exact (Config.mk G σ F S Q).all_data_this (Config.find_curState (by rfl) (by simp [Config.curState]) (config_wellformed hstar))
+    rw [heq]
 
 end Algorithm
