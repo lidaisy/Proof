@@ -288,7 +288,7 @@ theorem re_bridge (hσ : State.Sub σ (State.ofSigma Sg G)) {c : Ctx} {e : Expr}
 
 end Bridge
 
-theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G} {Sg : Sigma}
+theorem grow_sub1 {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G} {Sg : Sigma}
     (hSg : Proof.FixPoint Sg L) (hF : Sigma.Sub F.glue Sg)
     (hσ : State.Sub σ (State.ofSigma Sg G)) (hg : Grow L F G σ σ') :
     State.Sub σ' (State.ofSigma Sg G) := by
@@ -362,6 +362,12 @@ theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
       rcases hx with hx | ⟨hC, hx⟩
       · exact hσ.this C' hx
       · exact ht C' (Set.image_mono hs₁ hC) (Set.image_mono hs₁ hx)
+
+theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G} {Sg : Sigma}
+    {S : Stack} {Q : Queue} (hSg : Proof.FixPoint Sg L)
+    (hF : Sigma.Sub (Config.mk G σ F S Q).all_data Sg) (hg : Grow L F G σ σ') :
+    State.Sub σ' (State.ofSigma Sg G) := by
+  sorry
 
 def Config.less (c : Config) (Sg : Sigma) : Prop :=
   match c with
@@ -458,28 +464,28 @@ theorem less_than_step {L : Program} {c c' : Config}
     : LessThanInv c' L := by
   intro Sg hSg
   cases hstep with
-  | @step G σ σ' F S Q hg => sorry
-  --     have hgs := grow_sub hSg hF hσ hg
-  --     h Sg hSg
-  --     exact ⟨hF, grow_sub hSg hF hσ hg, hS⟩
-  | @suspend G G₀ σ F S Q c e hre hne _ _ => sorry
-  --     obtain ⟨hF, hσ, hS⟩ := h Sg hSg
-  --     refine ⟨hF, State.zero_sub _, ?_⟩
-  --     intro p hp
-  --     cases hp with
-  --     | head => exact hσ
-  --     | tail _ hp => exact hS p hp
+  | @step G σ σ' F S Q hg =>
+    have ih := h Sg hSg
+    have hgs := grow_sub hSg ih hg
+    -- same old pattern: but maybe a new theorem saying everything aside from
+    -- G returns the same answer.
+    sorry
+  | @suspend G G₀ σ F S Q c e hre hneeds hne hnS =>
+    have ih := h Sg hSg
+    -- theorem saying everything aside G G₀ returns the same answer
+    sorry
   | cycle _ => trivial
-  | @resume G G' σ σ' F S Q _ => sorry
-  --     obtain ⟨hF, hσ, hS⟩ := h Sg hSg
-  --     refine ⟨glue_insert_sub hF hσ, hS ⟨G', σ'⟩ List.mem_cons_self, ?_⟩
-  --     exact fun p hp => hS p (List.mem_cons_of_mem _ hp)
-  | @next G G₀ σ F Q _ _ => sorry
-  --     obtain ⟨hF, hσ, _⟩ := h Sg hSg
-  --     exact ⟨glue_insert_sub hF hσ, State.zero_sub _, by simp⟩
-  | @skip G G₀ σ F Q _ => sorry
-  --     obtain ⟨hF, hσ, hS⟩ := h Sg hSg
-  --     exact ⟨hF, hσ, hS⟩
+  | @resume G G' σ σ' F S Q _ =>
+    have ih := h Sg hSg
+    -- theorem saying everything aside G G' returns the same answer
+    -- List.mem_cons_self, List.mem_cons_of_mem
+    sorry
+  | @next G G₀ σ F Q _ _ =>
+    have ih := h Sg hSg
+    simp [Config.less]
+    -- theorem saying everything aside from
+    -- G returns the same answer.
+    sorry
   | @finish G σ F _ => trivial
 
 theorem less_than {L : Program} (hL : L.WellFormed) {c : Config}

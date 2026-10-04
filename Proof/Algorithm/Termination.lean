@@ -5,7 +5,7 @@ namespace Algorithm
 open Proof (GlobName Program)
 
 theorem solve_progress {L : Program} {G : GlobName} {σ : State G} {F : FixPoints}
-    {S : Stack} {Q : Queue} : ∃ c', Solve L (.mk G σ F S Q) c' := by
+    {S : Stack} {Q : Queue} (hwf : Config.WellFormed L (.mk G σ F S Q)) : ∃ c', Solve L (.mk G σ F S Q) c' := by
   by_cases hst : Stable L F G σ
   · cases S with
     | cons fr S' =>
@@ -16,7 +16,7 @@ theorem solve_progress {L : Program} {G : GlobName} {σ : State G} {F : FixPoint
         | nil => exact ⟨_, Solve.finish hst⟩
         | cons G₀ Q' =>
             by_cases hF : InFixPoint F G₀
-            · exact ⟨_, Solve.skip hF⟩
+            · exact absurd hF (hwf.right.right.right G₀ (by simp))
             · exact ⟨_, Solve.next hst hF⟩
   · simp only [Stable, not_and_or] at hst
     rcases hst with h | h

@@ -227,23 +227,84 @@ theorem Config.all_data_grow {L : Program} {F : FixPoints} {G : GlobName} {σ σ
           rw [h, h']
 
 theorem Config.stack_to_all {L : Program} {G G' : GlobName} {σ' : State G'} {σ : State G} {F : FixPoints} {ctx : Ctx}
-    {E : Expr } {S : Stack} {Q : Queue} (h : RE G' σ' L ctx E) (hS : G' ∈ S.globs)
+    {E : Expr } {S : Stack} {Q : Queue} (h : RE G' σ' L ctx E) (hS : Stack.find S G' = some σ')
+    (hwf : (Config.mk G σ F S Q).WellFormed L) (hne : G ≠ G')
     : Proof.RE (Config.mk G σ F S Q).all_data L G' ctx E := by
-  sorry
+  induction h with
+  | init₁ hobj => exact Proof.RE.init₁ hobj
+  | init₂ hobj => exact Proof.RE.init₂ hobj
+  | body hRM hcls =>
+    have h : (Config.mk G σ F S Q).all_data.RM G' = σ'.RM := ((Config.mk G σ F S Q).all_data_rm (Config.find_curStack (L := L) (rfl) hwf hS hne))
+    refine Proof.RE.body ?_ hcls
+    rw [h]
+    exact hRM
+  | proj _ ih => exact Proof.RE.proj ih
+  | newC₁ _ ih => exact Proof.RE.newC₁ ih
+  | newC₂ _ ih => exact Proof.RE.newC₂ ih
+  | app₁ _ ih => exact Proof.RE.app₁ ih
+  | app₂ _ ih => exact Proof.RE.app₂ ih
 
 theorem Config.all_data_suspend {L : Program} {F : FixPoints} {G G₀ : GlobName} {σ : State G}
     {S : Stack} {Q : Queue} {c : Ctx} {i : Idx} (hre : RE G σ L c (Expr.gproj G₀ i))
     (hneeds : Needs σ L F c (Expr.gproj G₀ i) G₀) (hne : G₀ ≠ G) (hnS : G₀ ∉ S.globs)
     : Config.all_data (.mk G σ F S Q) ≤
       Config.all_data (.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)) := by
-  sorry
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro G' C'
 
-theorem Config.all_data_resume {L : Program} {G G' : GlobName} {σ' : State G'} {σ : State G}
+    sorry
+  · intro G' C'
+
+    sorry
+  · intro G' C'
+
+    sorry
+  · intro G' C'
+
+    sorry
+  · intro G'
+
+    sorry
+  · intro G'
+
+    sorry
+  · intro G'
+
+    sorry
+  · intro G' C'
+
+    sorry
+
+theorem Config.all_data_resume {L : Program} {G G₀ : GlobName} {σ₀ : State G₀} {σ : State G}
     {F : FixPoints} {S : Stack} {Q : Queue} (hS : Stable L F G σ)
-    : Config.all_data (.mk G σ F (⟨G', σ'⟩ :: S) Q) ≤
-        Config.all_data (.mk G' σ' (F.insert G σ) S Q):= by
+    : Config.all_data (.mk G σ F (⟨G₀, σ₀⟩ :: S) Q) ≤
+        Config.all_data (.mk G₀ σ₀ (F.insert G σ) S Q):= by
   -- from Stable get (∀ σ', Grow L F G σ σ' → σ' ≤ σ), so σ' = σ
-  sorry
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro G' C'
+
+    sorry
+  · intro G' C'
+
+    sorry
+  · intro G' C'
+
+    sorry
+  · intro G' C'
+
+    sorry
+  · intro G'
+
+    sorry
+  · intro G'
+
+    sorry
+  · intro G'
+
+    sorry
+  · intro G' C'
+
+    sorry
 
 theorem stack_dep_step {c c' : Config} {L : Program}
     (hwf : Config.WellFormed L c) (hwf' : Config.WellFormed L c')
@@ -262,7 +323,7 @@ theorem stack_dep_step {c c' : Config} {L : Program}
       have hless := Config.all_data_suspend (Q := Q) hre hneeds hne hnS
       refine ⟨?_, ?_⟩
       · intro G' hG'
-        have hRE_all := Config.stack_to_all (σ := (State.zero G₀)) (F := F) (S := (⟨G, σ⟩ :: S)) (Q := (Q.remove G₀)) hre (by simp [Stack.globs])
+        have hRE_all := Config.stack_to_all (σ := (State.zero G₀)) (F := F) (S := (⟨G, σ⟩ :: S)) (Q := (Q.remove G₀)) hre (by simp [Stack.find]) hwf' hne
         have hDep : G₀ ∈ Proof.Dep (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).all_data L G := Proof.DepJ.direct hRE_all
         by_cases heq : G' = G
         · subst heq; exact hDep
@@ -311,7 +372,7 @@ theorem stack_dep_step {c c' : Config} {L : Program}
   | cycle =>
       trivial
   | @resume G G' σ σ' F S Q hSt =>
-      have hless := Config.all_data_resume (σ' := σ') (S := S) (Q := Q) hSt
+      have hless := Config.all_data_resume (σ₀ := σ') (S := S) (Q := Q) hSt
       refine ⟨?_, ?_⟩
       · intro G₀ hG₀
         obtain ⟨aft, bef, hS⟩ := List.append_of_mem hG₀
@@ -340,12 +401,12 @@ theorem stack_dep_step {c c' : Config} {L : Program}
         trivial
       · intro aft Gₒ bef hS G₁ hG₁
         simp [Stack.globs] at hS
-  | skip =>
-      refine ⟨?_, ?_⟩
-      · intro G' hG'
-        trivial
-      · intro aft Gₒ bef hS G₁ hG₁
-        simp [Stack.globs] at hS
+  -- | skip =>
+  --     refine ⟨?_, ?_⟩
+  --     · intro G' hG'
+  --       trivial
+  --     · intro aft Gₒ bef hS G₁ hG₁
+  --       simp [Stack.globs] at hS
   | finish =>
       trivial
 

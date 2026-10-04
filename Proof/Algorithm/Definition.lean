@@ -437,9 +437,9 @@ inductive Solve (L : Program) : Config → Config → Prop
       Stable L F G σ → ¬ InFixPoint F G₀ →
       Solve L (.mk G σ F List.nil (G₀ :: Q))
               (.mk G₀ (State.zero G₀) (F.insert G σ) List.nil Q)
-  | skip {G G₀ : GlobName} {σ : State G} {F : FixPoints} {Q : Queue} :
-      InFixPoint F G₀ →
-      Solve L (.mk G σ F List.nil (G₀ :: Q)) (.mk G σ F List.nil Q)
+  -- | skip {G G₀ : GlobName} {σ : State G} {F : FixPoints} {Q : Queue} :
+  --     InFixPoint F G₀ →
+  --     Solve L (.mk G σ F List.nil (G₀ :: Q)) (.mk G σ F List.nil Q)
   | finish {G : GlobName} {σ : State G} {F : FixPoints} :
       Stable L F G σ →
       Solve L (.mk G σ F List.nil List.nil) (.done (F.insert G σ))
@@ -495,6 +495,22 @@ def Stack.find (S : Stack) (G : GlobName) : Option (State G) :=
   match S with
   | [] => none
   | s :: ss => if h : s.fst = G then (some (h ▸ s.snd)) else Stack.find ss G
+
+theorem stack_find_to_globs {T : Stack} {G0 : GlobName} {τ : State G0}
+    (h: Stack.find T G0 = some τ)
+    : G0 ∈ Stack.globs T := by
+  induction T with
+  | nil =>
+    simp [Stack.find] at h
+  | cons s ss ih =>
+    cases s with
+    | mk g σg =>
+      by_cases hEq : g = G0
+      · simp [Stack.globs, hEq]
+      · have hrec : Stack.find ss G0 = some τ := by
+            simpa [Stack.find, hEq] using h
+        have hmem : G0 ∈ Stack.globs ss := ih hrec
+        simpa [Stack.globs, hEq] using (show G0 = g ∨ G0 ∈ Stack.globs ss from Or.inr hmem)
 
 def Config.curObj : Config → Option GlobName
   | .mk G _ _ _ _ => G
@@ -608,15 +624,25 @@ theorem Config.find_curState {L : Program} {c : Config}
     exact hwf.right.left ⟨σ, hσ⟩
   exact Or.inr ⟨hfn, Or.inl h⟩
 
--- theorem Config.find_curStack {L : Program} {c : Config}
---     {G : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
---     (hc : c = (Config.mk G σ F S Q))
---     (hfix : F G = none)
---     (hcur : c.curState (G := G) = none)
---     : Config.find c G = some σ := by
---   subst hc
---   simp [Config.find]
---   exact Or.inr ⟨hfix, Or.inr ⟨hcur, ⟩⟩
+theorem Config.find_curStack {L : Program} {c : Config}
+    {G G' : GlobName} {σ : State G} {σ' : State G'} {F : FixPoints} {S : Stack} {Q : Queue}
+    (hc : c = (Config.mk G σ F S Q))
+    (hwf : Config.WellFormed L c)
+    (h : Stack.find S G' = some σ') (hne : G ≠ G')
+    : Config.find c G' = some σ' := by
+  subst hc
+  have hstack : G' ∈ S.globs := stack_find_to_globs h
+  have hcur : (Config.mk G σ F S Q).curState (G := G') = none := by
+    simp  [Config.curState]
+    by_contra hn
+    exact hne hn
+  have hfix : (Config.mk G σ F S Q).fixpoints G' = none := by
+    simp [Config.fixpoints]
+    by_contra hcont
+    obtain ⟨σ, hσ⟩ := Option.ne_none_iff_exists'.mp hcont
+    exact hwf.right.right.left G' hstack ⟨σ, hσ⟩
+  simp [Config.find]
+  refine Or.inr ⟨hfix, Or.inr ⟨hcur, h⟩⟩
 
 def Config.all_data (c : Config) : Proof.Sigma :=
   { Param := fun G C => (c.find G).map (fun σ => σ.Param C) |>.getD ∅
