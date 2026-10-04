@@ -224,25 +224,25 @@ structure State.Sub {G : GlobName} (σ σ' : State G) : Prop where
   rm    : σ.RM ⊆ σ'.RM
   this  : ∀ C, σ.This C ⊆ σ'.This C
 
-theorem State.ext_sub {G : GlobName} {σ σ' : State G}
-    (h₁ : State.Sub σ σ') (h₂ : State.Sub σ' σ) : σ = σ' := by
-  cases σ
-  cases σ'
-  -- congr <;> ext
-  -- · refine ⟨?_, ?_⟩
-  --   · intro x
-  --     sorry
-  --   · sorry
+-- theorem State.ext_sub {G : GlobName} {σ σ' : State G}
+--     (h₁ : State.Sub σ σ') (h₂ : State.Sub σ' σ) : σ = σ' := by
+--   cases σ
+--   cases σ'
+--   -- congr <;> ext
+--   -- · refine ⟨?_, ?_⟩
+--   --   · intro x
+--   --     sorry
+--   --   · sorry
 
-  -- · exact Set.Subset.antisymm (h₁.fld₁ _) (h₂.fld₁ _)
-  -- · exact Set.Subset.antisymm (h₁.fld₂ _) (h₂.fld₂ _)
-  -- · exact Set.Subset.antisymm (h₁.ret _) (h₂.ret _)
-  -- · exact Set.Subset.antisymm h₁.gfld₁ h₂.gfld₁
-  -- · exact Set.Subset.antisymm h₁.gfld₂ h₂.gfld₂
-  -- · exact Set.Subset.antisymm h₁.rm h₂.rm
-  -- · exact Set.Subset.antisymm (h₁.this _) (h₂.this _)
+--   -- · exact Set.Subset.antisymm (h₁.fld₁ _) (h₂.fld₁ _)
+--   -- · exact Set.Subset.antisymm (h₁.fld₂ _) (h₂.fld₂ _)
+--   -- · exact Set.Subset.antisymm (h₁.ret _) (h₂.ret _)
+--   -- · exact Set.Subset.antisymm h₁.gfld₁ h₂.gfld₁
+--   -- · exact Set.Subset.antisymm h₁.gfld₂ h₂.gfld₂
+--   -- · exact Set.Subset.antisymm h₁.rm h₂.rm
+--   -- · exact Set.Subset.antisymm (h₁.this _) (h₂.this _)
 
-  sorry
+--   sorry
 
 -- instance {G : GlobName} : PartialOrder (State G) where
 instance {G : GlobName} : Preorder (State G) where
