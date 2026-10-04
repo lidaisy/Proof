@@ -19,12 +19,53 @@ theorem Config.all_data_grow {L : Program} {F : FixPoints} {G : GlobName} {σ σ
     : Config.all_data (.mk G σ F S Q) ≤ Config.all_data (.mk G σ' F S Q) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro G' C'
-    -- break G' into cases. It's in fixpoints, it's equal to G (curState), or it's in stack
-    have h := (Config.mk G σ F S Q).all_data_param (Config.find_curState (rfl) (by simp [Config.curState]) hwf)
-    have h' := (Config.mk G σ' F S Q).all_data_param (Config.find_curState (rfl) (by simp [Config.curState]) hwf')
     induction hgrow with
-    | rmInit =>
-      sorry
+    | @rmInit e₁ e₂ K₁ K₂ hG hC₁ hC₂ =>
+      cases hfix : F G' with
+      | some σfix =>
+          have hfind : Config.find (Config.mk G σ F S Q) G' = some σfix := by
+            simp [Config.find, Config.fixpoints, hfix]
+          have hfind' : Config.find (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q) G' = some σfix := by
+            simp [Config.find, Config.fixpoints, hfix]
+          have h := (Config.mk G σ F S Q).all_data_param hfind
+          have h' := (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q).all_data_param hfind'
+          rw [h, h']
+      | none =>
+          cases hcur : (Config.mk G σ F S Q).curState (G := G') with
+          | some σcur =>
+              have heq : G = G' := sorry
+              subst heq
+              have hfind : Config.find (Config.mk G σ F S Q) G = some σcur := by
+                simp [Config.find, Config.fixpoints, Config.stack, hfix, hcur]
+              have hcur' : (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q).curState (G := G) = some (σcur.addRM (K₁ ∪ K₂)) := by sorry
+              have hfind' : Config.find (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q) G = some (σcur.addRM (K₁ ∪ K₂)) := by
+                simp [Config.find, Config.fixpoints, Config.stack, hfix, hcur']
+              have h := (Config.mk G σ F S Q).all_data_param hfind
+              have h' := (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q).all_data_param hfind'
+              rw [h, h']
+              simp [State.addRM]
+          | none =>
+              have hcur' : (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q).curState (G := G') = none := by sorry
+              cases hstack : S.find G' with
+              | some σstack =>
+                  have hfind : Config.find (Config.mk G σ F S Q) G' = some σstack := by
+                    simp [Config.find, Config.fixpoints, Config.stack, hfix, hcur, hstack]
+                  have hfind' : Config.find (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q) G' = some σstack := by
+                    simp [Config.find, Config.fixpoints, Config.stack, hfix, hcur', hstack]
+                  have h := (Config.mk G σ F S Q).all_data_param hfind
+                  have h' := (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q).all_data_param hfind'
+                  rw [h, h']
+              | none =>
+                  have hfind : Config.find (Config.mk G σ F S Q) G' = none := by
+                    simp [Config.find, Config.fixpoints, Config.stack, hfix, hcur, hstack]
+                  have hfind' : Config.find (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q) G' = none := by
+                    simp [Config.find, Config.fixpoints, Config.stack, hfix, hcur', hstack]
+                  have h : (Config.mk G σ F S Q).all_data.Param G' C' = ∅ := by
+                    simp [Config.all_data, hfind]
+                  have h' :
+                      (Config.mk G (σ.addRM (K₁ ∪ K₂)) F S Q).all_data.Param G' C' = ∅ := by
+                    simp [Config.all_data, hfind']
+                  rw [h, h']
     | rmClosed => sorry
     | retInit => sorry
     | gfldOne => sorry
@@ -56,6 +97,7 @@ theorem Config.all_data_resume {L : Program} {G G' : GlobName} {σ' : State G'} 
     {F : FixPoints} {S : Stack} {Q : Queue} (hS : Stable L F G σ)
     : Config.all_data (.mk G σ F (⟨G', σ'⟩ :: S) Q) ≤
         Config.all_data (.mk G' σ' (F.insert G σ) S Q):= by
+  -- from Stable get (∀ σ', Grow L F G σ σ' → σ' ≤ σ), so σ' = σ
   sorry
 
 theorem stack_dep_step {c c' : Config} {L : Program}

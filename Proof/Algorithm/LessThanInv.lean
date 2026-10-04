@@ -85,19 +85,6 @@ instance Sigma.instOrderBot : OrderBot (Sigma) where
 
 @[simp] theorem FixPoints.glue_bot : FixPoints.glue (fun _ => none) = ⊥ := rfl
 
-/-! ### Comparing an algorithm state with (the `G`-slice of) a global fixpoint -/
-
-/-- The slice of a global analysis `Sg` at one global `G`, as an algorithm state. -/
-def State.ofSigma (Sg : Sigma) (G : GlobName) : State G where
-  Param := Sg.Param G
-  Fld₁  := Sg.Fld₁ G
-  Fld₂  := Sg.Fld₂ G
-  Ret   := Sg.Ret G
-  GFld₁ := Sg.GFld₁ G
-  GFld₂ := Sg.GFld₂ G
-  RM    := Sg.RM G
-  This  := Sg.This G
-
 theorem State.zero_sub {G : GlobName} (σ : State G) : State.Sub (State.zero G) σ :=
   ⟨fun _ => Set.empty_subset _, fun _ => Set.empty_subset _, fun _ => Set.empty_subset _,
     fun _ => Set.empty_subset _, Set.empty_subset _, Set.empty_subset _, Set.empty_subset _,
