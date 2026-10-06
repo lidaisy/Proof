@@ -415,11 +415,11 @@ def Config.stack : Config → Stack
   | _ => []
 
 inductive Solve (L : Program) : Config → Config → Prop
-  | step {G : GlobName} {σ σ' : State G} {F : FixPoints} {S : Stack} {Q : Queue} :
+  | step {G : GlobName} {σ σ' : State G} {F : FixPoints} {S : Stack} {Q : Queue} {hG : G ∈ L.GlobNames} :
       Grow L F G σ σ' →
       Solve L (.mk G σ F S Q) (.mk G σ' F S Q)
   | suspend {G G₀ : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
-      {c : Ctx} {i : Idx} :
+      {c : Ctx} {i : Idx} {hG : G ∈ L.GlobNames} {hG₀ : G₀ ∈ L.GlobNames} :
       RE G σ L c (Expr.gproj G₀ i) → Needs σ L F c (Expr.gproj G₀ i) G₀ →
       G₀ ≠ G → G₀ ∉ Stack.globs S →
       Solve L (.mk G σ F S Q)
@@ -437,9 +437,6 @@ inductive Solve (L : Program) : Config → Config → Prop
       Stable L F G σ → ¬ InFixPoint F G₀ →
       Solve L (.mk G σ F List.nil (G₀ :: Q))
               (.mk G₀ (State.zero G₀) (F.insert G σ) List.nil Q)
-  -- | skip {G G₀ : GlobName} {σ : State G} {F : FixPoints} {Q : Queue} :
-  --     InFixPoint F G₀ →
-  --     Solve L (.mk G σ F List.nil (G₀ :: Q)) (.mk G σ F List.nil Q)
   | finish {G : GlobName} {σ : State G} {F : FixPoints} :
       Stable L F G σ →
       Solve L (.mk G σ F List.nil List.nil) (.done (F.insert G σ))
@@ -521,9 +518,18 @@ def Config.curState {G : GlobName} : Config → Option (State G)
   | .mk G' σ _ _ _ => if h : G' = G then some (h ▸ σ) else none
   | _ => none
 
+def Config.NoDup (L : Program) (G : GlobName) (S : Stack) (Q : Queue) : Prop :=
+    ¬ G ∈ S.globs
+  ∧ ¬ G ∈ Q
+  ∧ (∀ G' ∈ S.globs, ¬ G' ∈ Q)
+  ∧ (∀ G' ∈ Q, ¬ G' ∈ S.globs)
+  ∧ List.Nodup S.globs
+  ∧ List.Nodup Q
+  ∧ ∀ G' ∈ L.GlobNames, G' = G ∨ (¬ (G' = G) ∧ G' ∈ S.globs) ∨ (¬ (G' = G ∨ G' ∈ S.globs) ∧ G' ∈ Q)
+
 def Config.WellFormed (L : Program) : Config → Prop
 | (.mk G _ F S Q) =>
-      (List.Perm (G :: (S.globs ++ Q)) L.GlobNames)
+      Config.NoDup L G S Q
     ∧ ¬ InFixPoint F G
     ∧ (∀ G' ∈ S.globs, ¬ InFixPoint F G')
     ∧ (∀ G' ∈ Q, ¬ InFixPoint F G')
@@ -533,77 +539,122 @@ def Config.WellFormed (L : Program) : Config → Prop
 theorem config_wellformed_step {L : Program} {c c' : Config} (hstep : Solve L c c')
     (h: c.WellFormed L)
     : c'.WellFormed L := by
-  sorry
-  -- cases hstep with
-  -- | step => exact h
-  -- | @suspend G₀ G₁ σ F S Q c i hre hneeds hne hnS =>
-  --     refine ⟨?_, ?_, ?_⟩
-  --     · cases hneeds with
-  --       | gproj h' => exact h'
-  --     · intro G' hG'
-  --       by_cases heq : G' = G₀
-  --       · subst heq; exact h.left
-  --       · have hS : G' ∈ S.globs := by -- TODO: factor this out. Used in cycle.lean too
-  --           simp [Stack.globs] at hG'
-  --           simp [Stack.globs, List.mem_map]
-  --           exact hG'.resolve_left heq
-  --         exact h.right.left G' hS
-  --     · intro G' hG'
-  --       have hremove_mem : ∀ {Q : Queue} {G G'}, G' ∈ Queue.remove Q G → G' ∈ Q := by
-  --         intro Q G G' hmem
-  --         induction Q with
-  --         | nil =>
-  --             simp [Queue.remove] at hmem
-  --         | cons g gs ih =>
-  --             by_cases hg : g == G
-  --             · have hgs : G' ∈ gs := by
-  --                 simpa [Queue.remove, hg] using hmem
-  --               simpa using (show G' = g ∨ G' ∈ gs from Or.inr hgs)
-  --             · have hsplit : G' = g ∨ G' ∈ Queue.remove gs G := by
-  --                 simpa [Queue.remove, hg] using hmem
-  --               rcases hsplit with rfl | hsplit
-  --               · simp
-  --               · have : G' ∈ gs := ih hsplit
-  --                 simpa using (show G' = g ∨ G' ∈ gs from Or.inr this)
-  --       have hQ : G' ∈ Q := hremove_mem hG'
-  --       exact h.right.right G' hQ
-  -- | cycle => trivial
-  -- | @resume G₀ G₁ σ σ' F S Q hSt =>
-  --     refine ⟨?_, ?_, ?_⟩
-  --     · have hG₁ : G₁ ∈ Stack.globs (⟨G₁, σ'⟩ :: S) := sorry
-  --       have hprev := h.right.left G₁ hG₁
-  --       sorry
-  --     · intro G' hG'
+  cases hstep with
+  | step => exact h
+  | @suspend G₀ G₁ σ F S Q c i hG₀ hG₁ hre hneeds hne hnS =>
+    have hremove_mem : ∀ {Q : Queue} {G G'}, G' ∈ Queue.remove Q G → G' ∈ Q := by
+      intro Q G G' hmem
+      induction Q with
+      | nil =>
+        simp [Queue.remove] at hmem
+      | cons g gs ih =>
+        by_cases hg : g == G
+        · have hgs : G' ∈ gs := by
+            simpa [Queue.remove, hg] using hmem
+          simpa using (show G' = g ∨ G' ∈ gs from Or.inr hgs)
+        · have hsplit : G' = g ∨ G' ∈ Queue.remove gs G := by
+            simpa [Queue.remove, hg] using hmem
+          rcases hsplit with rfl | hsplit
+          · simp
+          · have : G' ∈ gs := ih hsplit
+            simpa using (show G' = g ∨ G' ∈ gs from Or.inr this)
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · have ⟨hS, hQ, hSQ, hQS, hSD, hQD, hL⟩ := h.left
+      have hG₁Q : G₁ ∈ Q :=
+          match (hL G₁ hG₁) with
+          | Or.inl ha => False.elim (hne ha)
+          | Or.inr (Or.inl hb) => False.elim (hnS hb.2)
+          | Or.inr (Or.inr hc) => hc.2
+      have hG₁S := hQS G₁ hG₁Q
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · simp [Stack.globs]
+        simp [Stack.globs] at hG₁S
+        exact ⟨hne, hG₁S⟩
+      · unfold Queue.remove
 
-  --       sorry
-  --     · intro G' hG'
-  --       sorry
-  -- | @next G₀ G₁ σ F Q hSt hfix =>
-  --     refine ⟨?_, ?_, ?_⟩
-  --     · -- use hfix
-  --       sorry
-  --     · intro G' hG'
-  --       simp [Stack.globs] at hG'
-  --     · intro G' hG'
-  --       sorry
-  -- | @skip G₀ G₁ σ F Q hfix =>
-  --     refine ⟨?_, ?_, ?_⟩
-  --     · -- use hfix
-  --       sorry
-  --     · intro G' hG'
-  --       simp [Stack.globs] at hG'
-  --     · intro G' hG'
-  --       sorry
-  -- | finish => trivial
+        sorry
+      · intro G' hG'
+        by_cases heq : G' = G₀
+        · subst heq
+          -- exact hQ
+          sorry
+        · simp [Stack.globs] at hG'
+          have hG'S := hG'.resolve_left heq
+
+          sorry
+      · sorry
+      · sorry
+      · sorry
+      · sorry
+    · cases hneeds with
+      | gproj h' => exact h'
+    · intro G' hG'
+      by_cases heq : G' = G₀
+      · subst heq; exact h.right.left
+      · have hS : G' ∈ S.globs := by -- TODO: factor this out. Used in cycle.lean too
+          simp [Stack.globs] at hG'
+          simp [Stack.globs, List.mem_map]
+          exact hG'.resolve_left heq
+        exact h.right.right.left G' hS
+    · intro G' hG'
+      have hQ : G' ∈ Q := hremove_mem hG'
+      exact h.right.right.right G' hQ
+  | cycle => trivial
+  | @resume G₀ G₁ σ σ' F S Q hSt =>
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · sorry
+    · have hG₁ : G₁ ∈ Stack.globs (⟨G₁, σ'⟩ :: S) := by
+        simp [Stack.globs]
+      have hprev := h.right.right.left G₁ hG₁
+      have hne : G₁ ≠ G₀ := by
+        sorry
+      simp [InFixPoint, FixPoints.insert, hne]
+      simp [InFixPoint] at hprev
+      exact hprev
+    · intro G' hG'
+      have hGS : G' ∈ Stack.globs (⟨G₁, σ'⟩ :: S) := by
+        simp [Stack.globs] at hG'
+        simp [Stack.globs]
+        exact Or.inr hG'
+      have hprev := h.right.right.left G' hGS
+      have hne : G' ≠ G₀ := by
+        sorry
+      simp [InFixPoint, FixPoints.insert, hne]
+      simp [InFixPoint] at hprev
+      exact hprev
+    · intro G' hG'
+      have hprev := h.right.right.right G' hG'
+      have hne : G' ≠ G₀ := sorry
+      simp [InFixPoint, FixPoints.insert, hne]
+      simp [InFixPoint] at hprev
+      exact hprev
+  | @next G₀ G₁ σ F Q hSt hfix =>
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · sorry
+    · -- use hfix
+      sorry
+    · intro G' hG'
+      simp [Stack.globs] at hG'
+    · intro G' hG'
+      sorry
+  | finish => trivial
 
 theorem config_wellformed {L : Program} {hL : L.WellFormed} {c : Config} (hstar : Solve.Star L (Config.start L hL) c)
     : c.WellFormed L := by
   induction hstar with
   | refl =>
     refine ⟨?_, by simp [InFixPoint], by intro G hG'; simp [InFixPoint], by intro G hG'; simp [InFixPoint]⟩
-    have hhead : L.GlobNames.head hL.left :: L.GlobNames.tail = L.GlobNames :=
-        List.cons_head_tail hL.left
-    simp [Stack.globs, hhead]
+    refine ⟨by simp [Stack.globs], ?_, by simp [Stack.globs], by simp [Stack.globs], by simp [Stack.globs], ?_, ?_⟩
+    · rcases List.exists_cons_of_ne_nil hL.left with ⟨hd, tl, hEq⟩
+      have hnodup : List.Nodup (hd :: tl) := by
+        simpa [hEq] using hL.right
+      simp only [hEq, List.head_cons, List.tail_cons]
+      exact (List.nodup_cons.mp hnodup).1
+    · rcases List.exists_cons_of_ne_nil hL.left with ⟨hd, tl, hEq⟩
+      have hnodup : List.Nodup (hd :: tl) := by
+        simpa [hEq] using hL.right
+      simpa [hEq] using (List.nodup_cons.mp hnodup).2
+    · sorry
   | tail hprev hgrow ih => exact config_wellformed_step hgrow ih
 
 def Config.find (c : Config) (G : GlobName) : Option (State G) :=

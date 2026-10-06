@@ -5,13 +5,6 @@ namespace Algorithm
 
 open Proof (Program GlobName Expr Idx Dep)
 
-def StackDep (L : Program) : Config → Prop
-  | c@(.mk G' _ _ S _) =>
-      (∀ G ∈ S.globs, G' ∈ Dep c.all_data L G)
-        ∧ ∀ aft G₀ bef, S.globs = aft ++ (G₀ :: bef) → ∀ G₁ ∈ aft, G₁ ∈ Dep c.all_data L G₀
-  | .cycle _ => True
-  | .done _ => True
-
 theorem Config.all_data_grow {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
     {S : Stack} {Q : Queue}
     (hwf : Config.WellFormed L (.mk G σ F S Q)) (hwf' : Config.WellFormed L (.mk G σ' F S Q))
@@ -306,11 +299,18 @@ theorem Config.all_data_resume {L : Program} {G G₀ : GlobName} {σ₀ : State 
 
     sorry
 
+def StackDep (L : Program) : Config → Prop
+  | c@(.mk G' _ _ S _) =>
+    (∀ G ∈ S.globs, G' ∈ Dep c.all_data L G)
+      ∧ ∀ aft G₀ bef, S.globs = aft ++ (G₀ :: bef) → ∀ G₁ ∈ aft, G₁ ∈ Dep c.all_data L G₀
+  | .cycle _ => True
+  | .done _ => True
+
 theorem stack_dep_step {c c' : Config} {L : Program}
     (hwf : Config.WellFormed L c) (hwf' : Config.WellFormed L c')
     (hstep : Solve L c c') (h : StackDep L c) : StackDep L c' := by
   cases hstep with
-  | @step G σ σ' F S Q hg =>
+  | @step G σ σ' F S Q _ hg =>
       have hless := Config.all_data_grow (S := S) (Q := Q) hwf hwf' hg
       refine ⟨?_, ?_⟩
       · intro G' hG'
@@ -319,7 +319,7 @@ theorem stack_dep_step {c c' : Config} {L : Program}
       · intro aft G₀ bef hS G₁ hG₁
         have hDep := h.right aft G₀ bef hS G₁ hG₁
         exact (less_than_imp_dep_less_than (G := G₀) (L := L) hless) hDep
-  | @suspend G G₀ σ F S Q c i hre hneeds hne hnS =>
+  | @suspend G G₀ σ F S Q c i _ _ hre hneeds hne hnS =>
       have hless := Config.all_data_suspend (Q := Q) hre hneeds hne hnS
       refine ⟨?_, ?_⟩
       · intro G' hG'
@@ -401,16 +401,10 @@ theorem stack_dep_step {c c' : Config} {L : Program}
         trivial
       · intro aft Gₒ bef hS G₁ hG₁
         simp [Stack.globs] at hS
-  -- | skip =>
-  --     refine ⟨?_, ?_⟩
-  --     · intro G' hG'
-  --       trivial
-  --     · intro aft Gₒ bef hS G₁ hG₁
-  --       simp [Stack.globs] at hS
   | finish =>
       trivial
 
-theorem stack_dep_star {c : Config} {L : Program} {hL : L.WellFormed}
+theorem stack_dep {c : Config} {L : Program} {hL : L.WellFormed}
     (hstar : Solve.Star L (Config.start L hL) c) :
     StackDep L c := by
   induction hstar with
@@ -452,7 +446,7 @@ theorem report_cycle_then_dep {L : Program} {hL : L.WellFormed} :
         · subst hG'
           exact hCDep
         · have hADep : G' ∈ Proof.Dep c_prev_data L G := by
-            exact (stack_dep_star h_star).left G hG'
+            exact (stack_dep h_star).left G hG'
           exact Proof.DepJ.trans hADep hCDep
       exact less_than_imp_dep_less_than hl hCCyc
   · cases h_step
