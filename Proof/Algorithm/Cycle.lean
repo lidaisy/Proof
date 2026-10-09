@@ -7,7 +7,7 @@ open Proof (Program GlobName Expr Idx Dep)
 
 theorem Config.all_data_grow {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
     {S : Stack} {Q : Queue}
-    (hwf : Config.WellFormed L (.mk G σ F S Q)) (hwf' : Config.WellFormed L (.mk G σ' F S Q))
+    (hwf : Config.WellFormed (.mk G σ F S Q)) (hwf' : Config.WellFormed (.mk G σ' F S Q))
     (hgrow : Grow L F G σ σ')
     : Config.all_data (.mk G σ F S Q) ≤ Config.all_data (.mk G σ' F S Q) := by
   have hgl := grow_le hgrow
@@ -221,13 +221,13 @@ theorem Config.all_data_grow {L : Program} {F : FixPoints} {G : GlobName} {σ σ
 
 theorem Config.stack_to_all {L : Program} {G G' : GlobName} {σ' : State G'} {σ : State G} {F : FixPoints} {ctx : Ctx}
     {E : Expr } {S : Stack} {Q : Queue} (h : RE G' σ' L ctx E) (hS : Stack.find S G' = some σ')
-    (hwf : (Config.mk G σ F S Q).WellFormed L) (hne : G ≠ G')
+    (hwf : (Config.mk G σ F S Q).WellFormed) (hne : G ≠ G')
     : Proof.RE (Config.mk G σ F S Q).all_data L G' ctx E := by
   induction h with
   | init₁ hobj => exact Proof.RE.init₁ hobj
   | init₂ hobj => exact Proof.RE.init₂ hobj
   | body hRM hcls =>
-    have h : (Config.mk G σ F S Q).all_data.RM G' = σ'.RM := ((Config.mk G σ F S Q).all_data_rm (Config.find_curStack (L := L) (rfl) hwf hS hne))
+    have h : (Config.mk G σ F S Q).all_data.RM G' = σ'.RM := ((Config.mk G σ F S Q).all_data_rm (Config.find_curStack (rfl) hwf hS hne))
     refine Proof.RE.body ?_ hcls
     rw [h]
     exact hRM
@@ -307,10 +307,10 @@ def StackDep (L : Program) : Config → Prop
   | .done _ => True
 
 theorem stack_dep_step {c c' : Config} {L : Program}
-    (hwf : Config.WellFormed L c) (hwf' : Config.WellFormed L c')
+    (hwf : Config.WellFormed c) (hwf' : Config.WellFormed c')
     (hstep : Solve L c c') (h : StackDep L c) : StackDep L c' := by
   cases hstep with
-  | @step G σ σ' F S Q _ hg =>
+  | @step G σ σ' F S Q hg =>
       have hless := Config.all_data_grow (S := S) (Q := Q) hwf hwf' hg
       refine ⟨?_, ?_⟩
       · intro G' hG'
@@ -319,7 +319,7 @@ theorem stack_dep_step {c c' : Config} {L : Program}
       · intro aft G₀ bef hS G₁ hG₁
         have hDep := h.right aft G₀ bef hS G₁ hG₁
         exact (less_than_imp_dep_less_than (G := G₀) (L := L) hless) hDep
-  | @suspend G G₀ σ F S Q c i _ _ hre hneeds hne hnS =>
+  | @suspend G G₀ σ F S Q c i hre hneeds hne hnS =>
       have hless := Config.all_data_suspend (Q := Q) hre hneeds hne hnS
       refine ⟨?_, ?_⟩
       · intro G' hG'

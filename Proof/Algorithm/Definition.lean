@@ -415,11 +415,11 @@ def Config.stack : Config → Stack
   | _ => []
 
 inductive Solve (L : Program) : Config → Config → Prop
-  | step {G : GlobName} {σ σ' : State G} {F : FixPoints} {S : Stack} {Q : Queue} {hG : G ∈ L.GlobNames} :
+  | step {G : GlobName} {σ σ' : State G} {F : FixPoints} {S : Stack} {Q : Queue} :
       Grow L F G σ σ' →
       Solve L (.mk G σ F S Q) (.mk G σ' F S Q)
   | suspend {G G₀ : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
-      {c : Ctx} {i : Idx} {hG : G ∈ L.GlobNames} {hG₀ : G₀ ∈ L.GlobNames} :
+      {c : Ctx} {i : Idx} :
       RE G σ L c (Expr.gproj G₀ i) → Needs σ L F c (Expr.gproj G₀ i) G₀ →
       G₀ ≠ G → G₀ ∉ Stack.globs S →
       Solve L (.mk G σ F S Q)
@@ -518,18 +518,17 @@ def Config.curState {G : GlobName} : Config → Option (State G)
   | .mk G' σ _ _ _ => if h : G' = G then some (h ▸ σ) else none
   | _ => none
 
-def Config.NoDup (L : Program) (G : GlobName) (S : Stack) (Q : Queue) : Prop :=
+def Config.NoDup (G : GlobName) (S : Stack) (Q : Queue) : Prop :=
     ¬ G ∈ S.globs
   ∧ ¬ G ∈ Q
   ∧ (∀ G' ∈ S.globs, ¬ G' ∈ Q)
   ∧ (∀ G' ∈ Q, ¬ G' ∈ S.globs)
   ∧ List.Nodup S.globs
   ∧ List.Nodup Q
-  ∧ ∀ G' ∈ L.GlobNames, G' = G ∨ (¬ (G' = G) ∧ G' ∈ S.globs) ∨ (¬ (G' = G ∨ G' ∈ S.globs) ∧ G' ∈ Q)
 
-def Config.WellFormed (L : Program) : Config → Prop
+def Config.WellFormed : Config → Prop
 | (.mk G _ F S Q) =>
-      Config.NoDup L G S Q
+      Config.NoDup G S Q
     ∧ ¬ InFixPoint F G
     ∧ (∀ G' ∈ S.globs, ¬ InFixPoint F G')
     ∧ (∀ G' ∈ Q, ¬ InFixPoint F G')
@@ -537,11 +536,12 @@ def Config.WellFormed (L : Program) : Config → Prop
 | .done _ => True
 
 theorem config_wellformed_step {L : Program} {c c' : Config} (hstep : Solve L c c')
-    (h: c.WellFormed L)
-    : c'.WellFormed L := by
+    (h: c.WellFormed)
+    : c'.WellFormed := by
   cases hstep with
   | step => exact h
-  | @suspend G₀ G₁ σ F S Q c i hG₀ hG₁ hre hneeds hne hnS =>
+  | @suspend G₀ G₁ σ F S Q c i hre hneeds hne hnS =>
+    have ⟨hnd, hGnf, hSnf, hQnf⟩ := h
     have hremove_mem : ∀ {Q : Queue} {G G'}, G' ∈ Queue.remove Q G → G' ∈ Q := by
       intro Q G G' hmem
       induction Q with
@@ -559,55 +559,98 @@ theorem config_wellformed_step {L : Program} {c c' : Config} (hstep : Solve L c 
           · have : G' ∈ gs := ih hsplit
             simpa using (show G' = g ∨ G' ∈ gs from Or.inr this)
     refine ⟨?_, ?_, ?_, ?_⟩
-    · have ⟨hS, hQ, hSQ, hQS, hSD, hQD, hL⟩ := h.left
-      have hG₁Q : G₁ ∈ Q :=
-          match (hL G₁ hG₁) with
-          | Or.inl ha => False.elim (hne ha)
-          | Or.inr (Or.inl hb) => False.elim (hnS hb.2)
-          | Or.inr (Or.inr hc) => hc.2
-      have hG₁S := hQS G₁ hG₁Q
-      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-      · simp [Stack.globs]
-        simp [Stack.globs] at hG₁S
-        exact ⟨hne, hG₁S⟩
-      · unfold Queue.remove
-
-        sorry
+    · have ⟨hS, hQ, hSQ, hQS, hSD, hQD⟩ := hnd
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+      · simp only [Stack.globs, List.map_cons, List.mem_cons, not_or]
+        exact ⟨hne, hnS⟩
+      · have hremove_not_mem : ∀ (Q : Queue) (G : GlobName),
+            List.Nodup Q → G ∉ Queue.remove Q G := by
+          intro Q G hnodup
+          induction Q with
+          | nil => simp [Queue.remove]
+          | cons g gs ih =>
+            obtain ⟨hnot, hnodup'⟩ := List.nodup_cons.mp hnodup
+            by_cases hg : g == G
+            · have hgeq : g = G := by simpa using hg
+              subst g
+              simpa [Queue.remove] using hnot
+            · have hneq : g ≠ G := by
+                intro h
+                subst g
+                simp at hg
+              have hneq' : G ≠ g := Ne.symm hneq
+              simpa [Queue.remove, hg, hneq'] using ih hnodup'
+        exact hremove_not_mem Q G₁ hQD
       · intro G' hG'
         by_cases heq : G' = G₀
         · subst heq
-          -- exact hQ
-          sorry
+          exact fun hmem => hQ (hremove_mem hmem)
         · simp [Stack.globs] at hG'
           have hG'S := hG'.resolve_left heq
-
-          sorry
-      · sorry
-      · sorry
-      · sorry
-      · sorry
+          have hG'S' : G' ∈ S.globs := by
+            simp [Stack.globs, List.mem_map]
+            exact hG'S
+          exact fun hmem => hSQ G' hG'S' (hremove_mem hmem)
+      · intro G' hG'
+        have hG'Q : G' ∈ Q := hremove_mem hG'
+        have hG'S := hQS G' hG'Q
+        have hG'G₀ : ¬ G' = G₀ := by
+          intro heq
+          subst G'
+          exact hQ hG'Q
+        simp only [Stack.globs, List.map_cons, List.mem_cons, not_or]
+        exact ⟨hG'G₀, hG'S⟩
+      · simpa only [Stack.globs, List.map_cons] using
+          (List.nodup_cons.mpr ⟨hS, hSD⟩)
+      · have hremove_nodup : ∀ (Q : Queue) (G : GlobName),
+            List.Nodup Q → List.Nodup (Queue.remove Q G) := by
+          intro Q G
+          induction Q with
+          | nil => intro _; simp [Queue.remove]
+          | cons g gs ih =>
+            intro hnodup
+            obtain ⟨hnot, hnodup'⟩ := List.nodup_cons.mp hnodup
+            by_cases hg : g == G
+            · simpa [Queue.remove, hg] using hnodup'
+            · have hnot' : g ∉ Queue.remove gs G := fun hmem =>
+                hnot (hremove_mem hmem)
+              simpa [Queue.remove, hg] using
+                (List.nodup_cons.mpr ⟨hnot', ih hnodup'⟩)
+        exact hremove_nodup Q G₁ hQD
     · cases hneeds with
       | gproj h' => exact h'
     · intro G' hG'
       by_cases heq : G' = G₀
-      · subst heq; exact h.right.left
+      · subst heq; exact hGnf
       · have hS : G' ∈ S.globs := by -- TODO: factor this out. Used in cycle.lean too
           simp [Stack.globs] at hG'
           simp [Stack.globs, List.mem_map]
           exact hG'.resolve_left heq
-        exact h.right.right.left G' hS
+        exact hSnf G' hS
     · intro G' hG'
       have hQ : G' ∈ Q := hremove_mem hG'
-      exact h.right.right.right G' hQ
+      exact hQnf G' hQ
   | cycle => trivial
   | @resume G₀ G₁ σ σ' F S Q hSt =>
+    have ⟨hnd, hGnf, hSnf, hQnf⟩ := h
+    have ⟨hS, hQ, hSQ, hQS, hSD, hQD⟩ := hnd
     refine ⟨?_, ?_, ?_, ?_⟩
-    · sorry
-    · have hG₁ : G₁ ∈ Stack.globs (⟨G₁, σ'⟩ :: S) := by
-        simp [Stack.globs]
-      have hprev := h.right.right.left G₁ hG₁
-      have hne : G₁ ≠ G₀ := by
-        sorry
+    · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+      · exact (List.nodup_cons.mp hSD).1
+      · exact hSQ G₁ (by simp [Stack.globs])
+      · intro G' hG'
+        exact hSQ G' (by
+          simpa only [Stack.globs, List.map_cons, List.mem_cons] using
+            (show G' = G₁ ∨ G' ∈ S.globs from Or.inr hG'))
+      · intro G' hG'
+        have hnot := hQS G' hG'
+        simp only [Stack.globs, List.map_cons, List.mem_cons, not_or] at hnot
+        exact hnot.2
+      · exact (List.nodup_cons.mp hSD).2
+      · exact hQD
+    · have hG₁ : G₁ ∈ Stack.globs (⟨G₁, σ'⟩ :: S) := by simp [Stack.globs]
+      have hprev := hSnf G₁ hG₁
+      have hne : G₁ ≠ G₀ := by intro heq; subst heq; exact hS hG₁
       simp [InFixPoint, FixPoints.insert, hne]
       simp [InFixPoint] at hprev
       exact hprev
@@ -616,55 +659,70 @@ theorem config_wellformed_step {L : Program} {c c' : Config} (hstep : Solve L c 
         simp [Stack.globs] at hG'
         simp [Stack.globs]
         exact Or.inr hG'
-      have hprev := h.right.right.left G' hGS
-      have hne : G' ≠ G₀ := by
-        sorry
+      have hprev := hSnf G' hGS
+      have hne : G' ≠ G₀ := by intro heq; subst heq; exact hS hGS
       simp [InFixPoint, FixPoints.insert, hne]
       simp [InFixPoint] at hprev
       exact hprev
     · intro G' hG'
-      have hprev := h.right.right.right G' hG'
-      have hne : G' ≠ G₀ := sorry
+      have hprev := hQnf G' hG'
+      have hne : G' ≠ G₀ := by intro heq; subst heq; exact hQ hG'
       simp [InFixPoint, FixPoints.insert, hne]
       simp [InFixPoint] at hprev
       exact hprev
   | @next G₀ G₁ σ F Q hSt hfix =>
+    have ⟨hnd, hGnf, hSnf, hQnf⟩ := h
+    have ⟨hS, hQ, hSQ, hQS, hSD, hQD⟩ := hnd
     refine ⟨?_, ?_, ?_, ?_⟩
-    · sorry
-    · -- use hfix
-      sorry
+    · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+      · simp [Stack.globs]
+      · exact (List.nodup_cons.mp hQD).1
+      · simp [Stack.globs]
+      · intro G' hG'
+        simp [Stack.globs]
+      · simp [Stack.globs]
+      · exact (List.nodup_cons.mp hQD).2
+    · have hne : G₁ ≠ G₀ := by
+        intro heq
+        subst heq
+        exact hQ (List.mem_cons_self ..)
+      simpa only [InFixPoint, FixPoints.insert_other hne] using hfix
     · intro G' hG'
       simp [Stack.globs] at hG'
     · intro G' hG'
-      sorry
+      have hmem : G' ∈ G₁ :: Q := List.mem_cons_of_mem G₁ hG'
+      have hne : G' ≠ G₀ := by
+        intro heq
+        subst heq
+        exact hQ hmem
+      simpa only [InFixPoint, FixPoints.insert_other hne] using hQnf G' hmem
   | finish => trivial
 
 theorem config_wellformed {L : Program} {hL : L.WellFormed} {c : Config} (hstar : Solve.Star L (Config.start L hL) c)
-    : c.WellFormed L := by
+    : c.WellFormed := by
   induction hstar with
   | refl =>
     refine ⟨?_, by simp [InFixPoint], by intro G hG'; simp [InFixPoint], by intro G hG'; simp [InFixPoint]⟩
-    refine ⟨by simp [Stack.globs], ?_, by simp [Stack.globs], by simp [Stack.globs], by simp [Stack.globs], ?_, ?_⟩
-    · rcases List.exists_cons_of_ne_nil hL.left with ⟨hd, tl, hEq⟩
-      have hnodup : List.Nodup (hd :: tl) := by
-        simpa [hEq] using hL.right
-      simp only [hEq, List.head_cons, List.tail_cons]
-      exact (List.nodup_cons.mp hnodup).1
-    · rcases List.exists_cons_of_ne_nil hL.left with ⟨hd, tl, hEq⟩
-      have hnodup : List.Nodup (hd :: tl) := by
-        simpa [hEq] using hL.right
-      simpa [hEq] using (List.nodup_cons.mp hnodup).2
-    · sorry
+    · refine ⟨by simp [Stack.globs], ?_, by simp [Stack.globs], by simp [Stack.globs], by simp [Stack.globs], ?_⟩
+      · rcases List.exists_cons_of_ne_nil hL.left with ⟨hd, tl, hEq⟩
+        have hnodup : List.Nodup (hd :: tl) := by
+          simpa [hEq] using hL.right
+        simp only [hEq, List.head_cons, List.tail_cons]
+        exact (List.nodup_cons.mp hnodup).1
+      · rcases List.exists_cons_of_ne_nil hL.left with ⟨hd, tl, hEq⟩
+        have hnodup : List.Nodup (hd :: tl) := by
+          simpa [hEq] using hL.right
+        simpa [hEq] using (List.nodup_cons.mp hnodup).2
   | tail hprev hgrow ih => exact config_wellformed_step hgrow ih
 
 def Config.find (c : Config) (G : GlobName) : Option (State G) :=
     (c.fixpoints G).orElse fun _ =>
       (c.curState (G := G)).orElse fun _ => c.stack.find G
 
-theorem Config.find_curState {L : Program} {c : Config}
+theorem Config.find_curState {c : Config}
     {G : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
     (hc : c = (Config.mk G σ F S Q))
-    (h: c.curState = some σ) (hwf : Config.WellFormed L c)
+    (h: c.curState = some σ) (hwf : Config.WellFormed c)
     : Config.find c G = some σ := by
   subst hc
   simp [Config.find]
@@ -675,10 +733,10 @@ theorem Config.find_curState {L : Program} {c : Config}
     exact hwf.right.left ⟨σ, hσ⟩
   exact Or.inr ⟨hfn, Or.inl h⟩
 
-theorem Config.find_curStack {L : Program} {c : Config}
+theorem Config.find_curStack {c : Config}
     {G G' : GlobName} {σ : State G} {σ' : State G'} {F : FixPoints} {S : Stack} {Q : Queue}
     (hc : c = (Config.mk G σ F S Q))
-    (hwf : Config.WellFormed L c)
+    (hwf : Config.WellFormed c)
     (h : Stack.find S G' = some σ') (hne : G ≠ G')
     : Config.find c G' = some σ' := by
   subst hc

@@ -464,13 +464,13 @@ theorem less_than_step {L : Program} {c c' : Config}
     : LessThanInv c' L := by
   intro Sg hSg
   cases hstep with
-  | @step G σ σ' F S Q _ hg =>
+  | @step G σ σ' F S Q hg =>
     have ih := h Sg hSg
     have hgs := grow_sub hSg ih hg
     -- same old pattern: but maybe a new theorem saying everything aside from
     -- G returns the same answer.
     sorry
-  | @suspend G G₀ σ F S Q c i _ _ hre hneeds hne hnS =>
+  | @suspend G G₀ σ F S Q c i hre hneeds hne hnS =>
     have ih := h Sg hSg
     -- theorem saying everything aside G G₀ returns the same answer
     sorry

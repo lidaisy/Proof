@@ -5,7 +5,7 @@ namespace Algorithm
 open Proof (GlobName Program)
 
 theorem solve_progress {L : Program} {G : GlobName} {σ : State G} {F : FixPoints}
-    {S : Stack} {Q : Queue} (hwf : Config.WellFormed L (.mk G σ F S Q)) : ∃ c', Solve L (.mk G σ F S Q) c' := by
+    {S : Stack} {Q : Queue} (hwf : Config.WellFormed (.mk G σ F S Q)) : ∃ c', Solve L (.mk G σ F S Q) c' := by
   by_cases hst : Stable L F G σ
   · cases S with
     | cons fr S' =>
