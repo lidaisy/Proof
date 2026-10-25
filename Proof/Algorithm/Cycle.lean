@@ -10,214 +10,22 @@ theorem Config.all_data_grow {L : Program} {F : FixPoints} {G : GlobName} {σ σ
     (hwf : Config.WellFormed (.mk G σ F S Q)) (hwf' : Config.WellFormed (.mk G σ' F S Q))
     (hgrow : Grow L F G σ σ')
     : Config.all_data (.mk G σ F S Q) ≤ Config.all_data (.mk G σ' F S Q) := by
-  have hgl := grow_le hgrow
-
-  have hf : ∀ G' σfix, ¬G = G' → F G' = some σfix → Config.find (Config.mk G σ F S Q) G' = some σfix := by
-    intro G' σfix heq hfix
-    simp [Config.find, Config.fixpoints, hfix]
-  have hf' : ∀ G' σfix, ¬G = G' → F G' = some σfix → Config.find (Config.mk G σ' F S Q) G' = some σfix := by
-    intro G' σfix heq hfix
-    simp [Config.find, Config.fixpoints, hfix]
-  have hc : ∀ G', ¬G = G' → (Config.mk G σ F S Q).curState (G := G') = none := by
-    intro G' heq
-    simp [Config.curState, heq]
-  have hc' : ∀ G', ¬G = G' → (Config.mk G σ' F S Q).curState (G := G') = none := by
-    intro G' heq
-    simp [Config.curState, heq]
-  have hs : ∀ G' σstack, ¬G = G' → F G' = none → (Config.mk G σ F S Q).curState (G := G') = none →
-    S.find G' = some σstack → Config.find (Config.mk G σ F S Q) G' = some σstack := by
-    intro G' heq hfix hcur hstack
-    simp [Config.find, Config.fixpoints, Config.stack, hcur, hstack]
-  have hs' : ∀ G' σstack, ¬G = G' → F G' = none → (Config.mk G σ' F S Q).curState (G := G') = none →
-    S.find G' = some σstack → Config.find (Config.mk G σ' F S Q) G' = some σstack := by
-    intro G' heq hfix hcur hstack
-    simp [Config.find, Config.fixpoints, Config.stack, hcur, hstack]
-  have hn : ∀ G', ¬G = G' → F G' = none → (Config.mk G σ F S Q).curState (G := G') = none →
-    S.find G' = none → Config.find (Config.mk G σ F S Q) G' = none := by
-    intro G' heq hfix hcur hstack
-    simp [Config.find, Config.fixpoints, Config.stack, hfix, hcur, hstack]
-  have hn' : ∀ G', ¬G = G' → F G' = none → (Config.mk G σ' F S Q).curState (G := G') = none →
-    S.find G' = none → Config.find (Config.mk G σ' F S Q) G' = none := by
-    intro G' heq hfix hcur hstack
-    simp [Config.find, Config.fixpoints, Config.stack, hfix, hcur, hstack]
-
+  have hcur : (Config.mk G σ F S Q).find G = some σ :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf
+  have hcur' : (Config.mk G σ' F S Q).find G = some σ' :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf'
+  have hother (G' : GlobName) (hne : G ≠ G') :
+      (Config.mk G σ F S Q).find G' = (Config.mk G σ' F S Q).find G' := by
+    simp [Config.find, Config.curState, Config.fixpoints, Config.stack, hne]
+  rcases grow_le hgrow with ⟨hp, hf₁, hf₂, hr, hgf₁, hgf₂, hrm, ht⟩
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro G' C'
+  all_goals
+    intro G'
     by_cases heq : G = G'
     · subst heq
-      have h := (Config.mk G σ F S Q).all_data_param (Config.find_curState (by rfl) (by simp [Config.curState]) hwf)
-      have h' := (Config.mk G σ' F S Q).all_data_param (Config.find_curState (by rfl) (by simp [Config.curState]) hwf')
-      rw [h, h']
-      exact hgl.1 C'
-    · cases hfix : F G' with
-      | some σfix =>
-        have h := (Config.mk G σ F S Q).all_data_param (hf G' σfix heq hfix)
-        have h' := (Config.mk G σ' F S Q).all_data_param (hf' G' σfix heq hfix)
-        rw [h, h']
-      | none =>
-        cases hstack : S.find G' with
-        | some σstack =>
-          have h := (Config.mk G σ F S Q).all_data_param (hs G' σstack heq hfix (hc G' heq) hstack)
-          have h' := (Config.mk G σ' F S Q).all_data_param (hs' G' σstack heq hfix (hc' G' heq) hstack)
-          rw [h, h']
-        | none =>
-          have h : (Config.mk G σ F S Q).all_data.Param G' C' = ∅ := by simp [Config.all_data, (hn G' heq hfix (hc G' heq) hstack)]
-          have h' : (Config.mk G σ' F S Q).all_data.Param G' C' = ∅ := by simp [Config.all_data, (hn' G' heq hfix (hc' G' heq) hstack)]
-          rw [h, h']
-  · intro G' C'
-    by_cases heq : G = G'
-    · subst heq
-      have h := (Config.mk G σ F S Q).all_data_fld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) hwf)
-      have h' := (Config.mk G σ' F S Q).all_data_fld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) hwf')
-      rw [h, h']
-      exact hgl.2 C'
-    · cases hfix : F G' with
-      | some σfix =>
-        have h := (Config.mk G σ F S Q).all_data_fld₁ (hf G' σfix heq hfix)
-        have h' := (Config.mk G σ' F S Q).all_data_fld₁ (hf' G' σfix heq hfix)
-        rw [h, h']
-      | none =>
-        cases hstack : S.find G' with
-        | some σstack =>
-          have h := (Config.mk G σ F S Q).all_data_fld₁ (hs G' σstack heq hfix (hc G' heq) hstack)
-          have h' := (Config.mk G σ' F S Q).all_data_fld₁ (hs' G' σstack heq hfix (hc' G' heq) hstack)
-          rw [h, h']
-        | none =>
-          have h : (Config.mk G σ F S Q).all_data.Fld₁ G' C' = ∅ := by simp [Config.all_data, (hn G' heq hfix (hc G' heq) hstack)]
-          have h' : (Config.mk G σ' F S Q).all_data.Fld₁ G' C' = ∅ := by simp [Config.all_data, (hn' G' heq hfix (hc' G' heq) hstack)]
-          rw [h, h']
-  · intro G' C'
-    by_cases heq : G = G'
-    · subst heq
-      have h := (Config.mk G σ F S Q).all_data_fld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) hwf)
-      have h' := (Config.mk G σ' F S Q).all_data_fld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) hwf')
-      rw [h, h']
-      exact hgl.3 C'
-    · cases hfix : F G' with
-      | some σfix =>
-        have h := (Config.mk G σ F S Q).all_data_fld₂ (hf G' σfix heq hfix)
-        have h' := (Config.mk G σ' F S Q).all_data_fld₂ (hf' G' σfix heq hfix)
-        rw [h, h']
-      | none =>
-        cases hstack : S.find G' with
-        | some σstack =>
-          have h := (Config.mk G σ F S Q).all_data_fld₂ (hs G' σstack heq hfix (hc G' heq) hstack)
-          have h' := (Config.mk G σ' F S Q).all_data_fld₂ (hs' G' σstack heq hfix (hc' G' heq) hstack)
-          rw [h, h']
-        | none =>
-          have h : (Config.mk G σ F S Q).all_data.Fld₂ G' C' = ∅ := by simp [Config.all_data, (hn G' heq hfix (hc G' heq) hstack)]
-          have h' : (Config.mk G σ' F S Q).all_data.Fld₂ G' C' = ∅ := by simp [Config.all_data, (hn' G' heq hfix (hc' G' heq) hstack)]
-          rw [h, h']
-  · intro G' C'
-    by_cases heq : G = G'
-    · subst heq
-      have h := (Config.mk G σ F S Q).all_data_ret (Config.find_curState (by rfl) (by simp [Config.curState]) hwf)
-      have h' := (Config.mk G σ' F S Q).all_data_ret (Config.find_curState (by rfl) (by simp [Config.curState]) hwf')
-      rw [h, h']
-      exact hgl.4 C'
-    · cases hfix : F G' with
-      | some σfix =>
-        have h := (Config.mk G σ F S Q).all_data_ret (hf G' σfix heq hfix)
-        have h' := (Config.mk G σ' F S Q).all_data_ret (hf' G' σfix heq hfix)
-        rw [h, h']
-      | none =>
-        cases hstack : S.find G' with
-        | some σstack =>
-          have h := (Config.mk G σ F S Q).all_data_ret (hs G' σstack heq hfix (hc G' heq) hstack)
-          have h' := (Config.mk G σ' F S Q).all_data_ret (hs' G' σstack heq hfix (hc' G' heq) hstack)
-          rw [h, h']
-        | none =>
-          have h : (Config.mk G σ F S Q).all_data.Ret G' C' = ∅ := by simp [Config.all_data, (hn G' heq hfix (hc G' heq) hstack)]
-          have h' : (Config.mk G σ' F S Q).all_data.Ret G' C' = ∅ := by simp [Config.all_data, (hn' G' heq hfix (hc' G' heq) hstack)]
-          rw [h, h']
-  · intro G'
-    by_cases heq : G = G'
-    · subst heq
-      have h := (Config.mk G σ F S Q).all_data_gfld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) hwf)
-      have h' := (Config.mk G σ' F S Q).all_data_gfld₁ (Config.find_curState (by rfl) (by simp [Config.curState]) hwf')
-      rw [h, h']
-      exact hgl.5
-    · cases hfix : F G' with
-      | some σfix =>
-        have h := (Config.mk G σ F S Q).all_data_gfld₁ (hf G' σfix heq hfix)
-        have h' := (Config.mk G σ' F S Q).all_data_gfld₁ (hf' G' σfix heq hfix)
-        rw [h, h']
-      | none =>
-        cases hstack : S.find G' with
-        | some σstack =>
-          have h := (Config.mk G σ F S Q).all_data_gfld₁ (hs G' σstack heq hfix (hc G' heq) hstack)
-          have h' := (Config.mk G σ' F S Q).all_data_gfld₁ (hs' G' σstack heq hfix (hc' G' heq) hstack)
-          rw [h, h']
-        | none =>
-          have h : (Config.mk G σ F S Q).all_data.GFld₁ G' = ∅ := by simp [Config.all_data, (hn G' heq hfix (hc G' heq) hstack)]
-          have h' : (Config.mk G σ' F S Q).all_data.GFld₁ G' = ∅ := by simp [Config.all_data, (hn' G' heq hfix (hc' G' heq) hstack)]
-          rw [h, h']
-  · intro G'
-    by_cases heq : G = G'
-    · subst heq
-      have h := (Config.mk G σ F S Q).all_data_gfld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) hwf)
-      have h' := (Config.mk G σ' F S Q).all_data_gfld₂ (Config.find_curState (by rfl) (by simp [Config.curState]) hwf')
-      rw [h, h']
-      exact hgl.6
-    · cases hfix : F G' with
-      | some σfix =>
-        have h := (Config.mk G σ F S Q).all_data_gfld₂ (hf G' σfix heq hfix)
-        have h' := (Config.mk G σ' F S Q).all_data_gfld₂ (hf' G' σfix heq hfix)
-        rw [h, h']
-      | none =>
-        cases hstack : S.find G' with
-        | some σstack =>
-          have h := (Config.mk G σ F S Q).all_data_gfld₂ (hs G' σstack heq hfix (hc G' heq) hstack)
-          have h' := (Config.mk G σ' F S Q).all_data_gfld₂ (hs' G' σstack heq hfix (hc' G' heq) hstack)
-          rw [h, h']
-        | none =>
-          have h : (Config.mk G σ F S Q).all_data.GFld₂ G' = ∅ := by simp [Config.all_data, (hn G' heq hfix (hc G' heq) hstack)]
-          have h' : (Config.mk G σ' F S Q).all_data.GFld₂ G' = ∅ := by simp [Config.all_data, (hn' G' heq hfix (hc' G' heq) hstack)]
-          rw [h, h']
-  · intro G'
-    by_cases heq : G = G'
-    · subst heq
-      have h := (Config.mk G σ F S Q).all_data_rm (Config.find_curState (by rfl) (by simp [Config.curState]) hwf)
-      have h' := (Config.mk G σ' F S Q).all_data_rm (Config.find_curState (by rfl) (by simp [Config.curState]) hwf')
-      rw [h, h']
-      exact hgl.7
-    · cases hfix : F G' with
-      | some σfix =>
-        have h := (Config.mk G σ F S Q).all_data_rm (hf G' σfix heq hfix)
-        have h' := (Config.mk G σ' F S Q).all_data_rm (hf' G' σfix heq hfix)
-        rw [h, h']
-      | none =>
-        cases hstack : S.find G' with
-        | some σstack =>
-          have h := (Config.mk G σ F S Q).all_data_rm (hs G' σstack heq hfix (hc G' heq) hstack)
-          have h' := (Config.mk G σ' F S Q).all_data_rm (hs' G' σstack heq hfix (hc' G' heq) hstack)
-          rw [h, h']
-        | none =>
-          have h : (Config.mk G σ F S Q).all_data.RM G' = ∅ := by simp [Config.all_data, (hn G' heq hfix (hc G' heq) hstack)]
-          have h' : (Config.mk G σ' F S Q).all_data.RM G' = ∅ := by simp [Config.all_data, (hn' G' heq hfix (hc' G' heq) hstack)]
-          rw [h, h']
-  · intro G' C'
-    by_cases heq : G = G'
-    · subst heq
-      have h := (Config.mk G σ F S Q).all_data_this (Config.find_curState (by rfl) (by simp [Config.curState]) hwf)
-      have h' := (Config.mk G σ' F S Q).all_data_this (Config.find_curState (by rfl) (by simp [Config.curState]) hwf')
-      rw [h, h']
-      exact hgl.8 C'
-    · cases hfix : F G' with
-      | some σfix =>
-        have h := (Config.mk G σ F S Q).all_data_this (hf G' σfix heq hfix)
-        have h' := (Config.mk G σ' F S Q).all_data_this (hf' G' σfix heq hfix)
-        rw [h, h']
-      | none =>
-        cases hstack : S.find G' with
-        | some σstack =>
-          have h := (Config.mk G σ F S Q).all_data_this (hs G' σstack heq hfix (hc G' heq) hstack)
-          have h' := (Config.mk G σ' F S Q).all_data_this (hs' G' σstack heq hfix (hc' G' heq) hstack)
-          rw [h, h']
-        | none =>
-          have h : (Config.mk G σ F S Q).all_data.This G' C' = ∅ := by simp [Config.all_data, (hn G' heq hfix (hc G' heq) hstack)]
-          have h' : (Config.mk G σ' F S Q).all_data.This G' C' = ∅ := by simp [Config.all_data, (hn' G' heq hfix (hc' G' heq) hstack)]
-          rw [h, h']
+      simp [Config.all_data, hcur, hcur']
+      assumption
+    · simp [Config.all_data, hother G' heq]
 
 theorem Config.stack_to_all {L : Program} {G G' : GlobName} {σ' : State G'} {σ : State G} {F : FixPoints} {ctx : Ctx}
     {E : Expr } {S : Stack} {Q : Queue} (h : RE G' σ' L ctx E) (hS : Stack.find S G' = some σ')
@@ -423,7 +231,7 @@ theorem Config.state_to_all {L : Program} {hL : L.WellFormed} {G' G : GlobName} 
     (hstar : Solve.Star L (Config.start L hL) (Config.mk G' σ' F S Q))
     (h : RE G' σ' L ctx (Expr.gproj G i))
     : Proof.RE (Config.mk G' σ' F S Q).all_data L G' ctx (Expr.gproj G i) := by
-  exact re_bridge (Config.all_data_state hstar) h
+  exact re_bridge (by rw [← Config.all_data_state hstar]; exact le_refl σ') h
 
 theorem report_cycle_then_dep {L : Program} {hL : L.WellFormed} :
     ∀ G, Solve.Star L (Config.start L hL) (.cycle G) →

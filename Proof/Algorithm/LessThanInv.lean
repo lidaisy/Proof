@@ -372,7 +372,7 @@ theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
 def Config.less (c : Config) (Sg : Sigma) : Prop :=
   match c with
   | .mk _ _ _ _ _ => c.all_data ≤ Sg
-  | .done _ => True
+  | .done F => F.glue ≤ Sg
   | .cycle _ => True
 
 def LessThanInv (c : Config) (L : Program) : Prop :=
@@ -466,14 +466,77 @@ theorem less_than_step {L : Program} {c c' : Config}
   cases hstep with
   | @step G σ σ' F S Q hg =>
     have ih := h Sg hSg
+    change (Config.mk G σ F S Q).all_data ≤ Sg at ih
     have hgs := grow_sub hSg ih hg
-    -- same old pattern: but maybe a new theorem saying everything aside from
-    -- G returns the same answer.
-    sorry
+    change (Config.mk G σ' F S Q).all_data ≤ Sg
+    cases hFG : F G with
+    | some σfix =>
+      have hfind (G' : GlobName) :
+          (Config.mk G σ F S Q).find G' = (Config.mk G σ' F S Q).find G' := by
+        by_cases heq : G = G'
+        · subst heq
+          simp [Config.find, Config.fixpoints, hFG]
+        · simp [Config.find, Config.curState, Config.fixpoints, Config.stack, heq]
+      simpa only [Config.all_data, hfind] using ih
+    | none =>
+      have hcur : (Config.mk G σ' F S Q).find G = some σ' := by
+        simp [Config.find, Config.fixpoints, Config.curState, hFG]
+      have hother (G' : GlobName) (hne : G ≠ G') :
+          (Config.mk G σ F S Q).find G' = (Config.mk G σ' F S Q).find G' := by
+        simp [Config.find, Config.curState, Config.fixpoints, Config.stack, hne]
+      rcases ih with ⟨hp, hf₁, hf₂, hr, hgf₁, hgf₂, hrm, ht⟩
+      rcases hgs with ⟨hsp, hsf₁, hsf₂, hsr, hsgf₁, hsgf₂, hsrm, hst⟩
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      all_goals
+        intro G'
+        by_cases heq : G = G'
+        · subst heq
+          simp [Config.all_data, hcur]
+          assumption
+        · have hfind := hother G' heq
+          first
+            | simpa only [Config.all_data, hfind] using hp G'
+            | simpa only [Config.all_data, hfind] using hf₁ G'
+            | simpa only [Config.all_data, hfind] using hf₂ G'
+            | simpa only [Config.all_data, hfind] using hr G'
+            | simpa only [Config.all_data, hfind] using hgf₁ G'
+            | simpa only [Config.all_data, hfind] using hgf₂ G'
+            | simpa only [Config.all_data, hfind] using hrm G'
+            | simpa only [Config.all_data, hfind] using ht G'
   | @suspend G G₀ σ F S Q c i hre hneeds hne hnS =>
     have ih := h Sg hSg
-    -- theorem saying everything aside G G₀ returns the same answer
-    sorry
+    change (Config.mk G σ F S Q).all_data ≤ Sg at ih
+    change (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).all_data ≤ Sg
+    have hstack : S.find G₀ = none := by
+      cases hfind : S.find G₀ with
+      | none => rfl
+      | some τ => exact False.elim (hnS (stack_find_to_globs hfind))
+    have hother (G' : GlobName) (h0 : G' ≠ G₀) :
+        (Config.mk G σ F S Q).find G' =
+        (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).find G' := by
+      by_cases hG : G' = G
+      · subst G'
+        simp [Config.find, Config.fixpoints, Config.curState, Config.stack,
+          Stack.find, hne]
+      · have hG' : G ≠ G' := Ne.symm hG
+        simp [Config.find, Config.fixpoints, Config.curState, Config.stack,
+          Stack.find, hG', h0.symm]
+    have hdata : (Config.mk G σ F S Q).all_data =
+        (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).all_data := by
+      apply Proof.Sigma.ext
+      all_goals
+        funext G' C
+        by_cases h0 : G' = G₀
+        · subst G'
+          cases hF : F G₀ with
+          | none =>
+            simp [Config.all_data, Config.find, Config.fixpoints, Config.curState,
+              Config.stack, Stack.find, State.zero, hF, hstack, hne.symm]
+          | some τ =>
+            simp [Config.all_data, Config.find, Config.fixpoints, hF]
+        · simp only [Config.all_data, hother G' h0]
+    rw [hdata] at ih
+    exact ih
   | cycle _ => trivial
   | @resume G G' σ σ' F S Q _ =>
     have ih := h Sg hSg
@@ -486,7 +549,11 @@ theorem less_than_step {L : Program} {c c' : Config}
     -- theorem saying everything aside from
     -- G returns the same answer.
     sorry
-  | @finish G σ F _ => trivial
+  | @finish G σ F hSt =>
+    have ih := h Sg hSg
+    simp [Config.less]
+
+    sorry
 
 theorem less_than {L : Program} (hL : L.WellFormed) {c : Config}
     (hstar : Solve.Star L (Config.start L hL) c)
