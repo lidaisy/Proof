@@ -753,6 +753,26 @@ theorem Config.find_curStack {c : Config}
   simp [Config.find]
   refine Or.inr ⟨hfix, Or.inr ⟨hcur, h⟩⟩
 
+theorem Config.find_none {c : Config}
+    {G G' : GlobName} {σ : State G} {F : FixPoints} {S : Stack} {Q : Queue}
+    (hc : c = (Config.mk G σ F S Q))
+    (hwf : Config.WellFormed c)
+    (hF : ¬ InFixPoint F G')
+    (hne : G ≠ G')
+    (hS : Stack.find S G' = none)
+    : Config.find c G' = none := by
+  subst hc
+  simp [InFixPoint] at hF
+  have hFnone : F G' = none := by
+    cases h_eq : F G' with
+    | none => rfl
+    | some x => exact False.elim (hF x h_eq)
+  have hcur : (Config.mk G σ F S Q).curState (G := G') = none := by
+    simp  [Config.curState]
+    by_contra hn
+    exact hne hn
+  simp [Config.find, Config.fixpoints, hFnone, hcur, Config.stack, hS]
+
 def Config.all_data (c : Config) : Proof.Sigma :=
   { Param := fun G C => (c.find G).map (fun σ => σ.Param C) |>.getD ∅
     Fld₁  := fun G C => (c.find G).map (fun σ => σ.Fld₁ C) |>.getD ∅

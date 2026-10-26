@@ -48,64 +48,84 @@ theorem Config.stack_to_all {L : Program} {G G' : GlobName} {σ' : State G'} {σ
 theorem Config.all_data_suspend {L : Program} {F : FixPoints} {G G₀ : GlobName} {σ : State G}
     {S : Stack} {Q : Queue} {c : Ctx} {i : Idx} (hre : RE G σ L c (Expr.gproj G₀ i))
     (hneeds : Needs σ L F c (Expr.gproj G₀ i) G₀) (hne : G₀ ≠ G) (hnS : G₀ ∉ S.globs)
+    (hwf : Config.WellFormed (.mk G σ F S Q)) (hwf' : Config.WellFormed (.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)))
     : Config.all_data (.mk G σ F S Q) ≤
       Config.all_data (.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)) := by
+  have hG : (Config.mk G σ F S Q).find G = some σ :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf
+  have hG' : (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).find G = σ :=
+    Config.find_curStack rfl hwf' (by simp [Stack.find]) hne
+  have hG₀ : (Config.mk G σ F S Q).find G₀ = none := by
+    have hnF : ¬ InFixPoint F G₀:= by
+      cases hneeds with
+      | gproj h => exact h
+    have hnS' : Stack.find S G₀ = none := by
+      simp [Stack.globs] at hnS
+      induction S with
+      | nil =>
+        rfl
+      | cons s ss ih =>
+        sorry
+    exact Config.find_none rfl hwf hnF hne.symm hnS'
+  have hG₀' : (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).find G₀ = (State.zero G₀) :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf'
+  have hotherStack (G' : GlobName) (hne' : G ≠ G' ∧ G₀ ≠ G') :
+      S.find G' = Stack.find (⟨G, σ⟩ :: S) G' := by
+    simp [Stack.find, hne'.left]
+  have hother (G' : GlobName) (hne' : G ≠ G' ∧ G₀ ≠ G') :
+      (Config.mk G σ F S Q).find G' = (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).find G' := by
+    simp [Config.find, Config.curState, Config.fixpoints, Config.stack, hne'.left, hne'.right, hotherStack]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro G' C'
+  all_goals
+    intro G'
+    by_cases heq : G = G'
+    · subst heq
+      simp [Config.all_data, hG, hG']
+    · by_cases heq₀ : G₀ = G'
+      · subst heq₀
+        simp [Config.all_data, hG₀, hG₀']
+      · simp [Config.all_data, hother G' (⟨heq, heq₀⟩)]
 
-    sorry
-  · intro G' C'
-
-    sorry
-  · intro G' C'
-
-    sorry
-  · intro G' C'
-
-    sorry
-  · intro G'
-
-    sorry
-  · intro G'
-
-    sorry
-  · intro G'
-
-    sorry
-  · intro G' C'
-
-    sorry
-
-theorem Config.all_data_resume {L : Program} {G G₀ : GlobName} {σ₀ : State G₀} {σ : State G}
-    {F : FixPoints} {S : Stack} {Q : Queue} (hS : Stable L F G σ)
+theorem Config.all_data_resume {G G₀ : GlobName} {σ₀ : State G₀} {σ : State G}
+    {F : FixPoints} {S : Stack} {Q : Queue}
+    (hwf : Config.WellFormed (.mk G σ F (⟨G₀, σ₀⟩ :: S) Q))
+    (hwf' : Config.WellFormed (.mk G₀ σ₀ (F.insert G σ) S Q))
     : Config.all_data (.mk G σ F (⟨G₀, σ₀⟩ :: S) Q) ≤
         Config.all_data (.mk G₀ σ₀ (F.insert G σ) S Q):= by
-  -- from Stable get (∀ σ', Grow L F G σ σ' → σ' ≤ σ), so σ' = σ
+  have hne : G ≠ G₀ := by
+    intro heq
+    subst heq
+    have h := hwf.left.left
+    simp [Stack.globs] at h
+  have hG : (Config.mk G σ F (⟨G₀, σ₀⟩ :: S) Q).find G = some σ :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf
+  have hG' : (Config.mk G₀ σ₀ (F.insert G σ) S Q).find G = σ := by
+    have hF : (F.insert G σ) G = σ := by simp [FixPoints.insert]
+    simp [Config.find]
+    exact Or.inl hF
+  have hG₀ : (Config.mk G σ F (⟨G₀, σ₀⟩ :: S) Q).find G₀ = σ₀ :=
+    Config.find_curStack rfl hwf (by simp [Stack.find]) hne
+  have hG₀' : (Config.mk G₀ σ₀ (F.insert G σ) S Q).find G₀ = σ₀ :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf'
+  have hotherFixpoint (G' : GlobName) (hne' : G ≠ G' ∧ G₀ ≠ G') :
+      F G' = (F.insert G σ) G' := by
+    simp [FixPoints.insert_other (σ := σ) (F := F) hne'.left.symm]
+  have hotherStack (G' : GlobName) (hne' : G ≠ G' ∧ G₀ ≠ G') :
+      Stack.find (⟨G₀, σ₀⟩ :: S) G' = Stack.find S G' := by
+    simp [Stack.find, hne'.right]
+  have hother (G' : GlobName) (hne' : G ≠ G' ∧ G₀ ≠ G') :
+      (Config.mk G σ F (⟨G₀, σ₀⟩ :: S) Q).find G' = (Config.mk G₀ σ₀ (F.insert G σ) S Q).find G' := by
+    simp [Config.find, Config.curState, Config.fixpoints, Config.stack, hne'.left, hne'.right, hotherStack, hotherFixpoint]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro G' C'
-
-    sorry
-  · intro G' C'
-
-    sorry
-  · intro G' C'
-
-    sorry
-  · intro G' C'
-
-    sorry
-  · intro G'
-
-    sorry
-  · intro G'
-
-    sorry
-  · intro G'
-
-    sorry
-  · intro G' C'
-
-    sorry
+  all_goals
+    intro G'
+    by_cases heq : G = G'
+    · subst heq
+      simp [Config.all_data, hG, hG']
+    · by_cases heq₀ : G₀ = G'
+      · subst heq₀
+        simp [Config.all_data, hG₀, hG₀']
+      · simp [Config.all_data, hother G' (⟨heq, heq₀⟩)]
 
 def StackDep (L : Program) : Config → Prop
   | c@(.mk G' _ _ S _) =>
@@ -128,7 +148,7 @@ theorem stack_dep_step {c c' : Config} {L : Program}
         have hDep := h.right aft G₀ bef hS G₁ hG₁
         exact (less_than_imp_dep_less_than (G := G₀) (L := L) hless) hDep
   | @suspend G G₀ σ F S Q c i hre hneeds hne hnS =>
-      have hless := Config.all_data_suspend (Q := Q) hre hneeds hne hnS
+      have hless := Config.all_data_suspend (Q := Q) hre hneeds hne hnS hwf hwf'
       refine ⟨?_, ?_⟩
       · intro G' hG'
         have hRE_all := Config.stack_to_all (σ := (State.zero G₀)) (F := F) (S := (⟨G, σ⟩ :: S)) (Q := (Q.remove G₀)) hre (by simp [Stack.find]) hwf' hne
@@ -180,7 +200,7 @@ theorem stack_dep_step {c c' : Config} {L : Program}
   | cycle =>
       trivial
   | @resume G G' σ σ' F S Q hSt =>
-      have hless := Config.all_data_resume (σ₀ := σ') (S := S) (Q := Q) hSt
+      have hless := Config.all_data_resume (σ₀ := σ') (S := S) (Q := Q) hwf hwf'
       refine ⟨?_, ?_⟩
       · intro G₀ hG₀
         obtain ⟨aft, bef, hS⟩ := List.append_of_mem hG₀
