@@ -288,10 +288,53 @@ theorem re_bridge (hσ : State.Sub σ (State.ofSigma Sg G)) {c : Ctx} {e : Expr}
 
 end Bridge
 
-theorem grow_sub1 {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G} {Sg : Sigma}
-    (hSg : Proof.FixPoint Sg L) (hF : Sigma.Sub F.glue Sg)
-    (hσ : State.Sub σ (State.ofSigma Sg G)) (hg : Grow L F G σ σ') :
+theorem sub_all_data {F : FixPoints} {G : GlobName} {σ : State G} {Sg : Sigma}
+    {S : Stack} {Q : Queue} (hG : ¬ InFixPoint F G)
+    (hsub : Sigma.Sub (Config.mk G σ F S Q).all_data Sg) :
+    Sigma.Sub F.glue Sg ∧ State.Sub σ (State.ofSigma Sg G) := by
+  have hFG : F G = none := by
+    cases h : F G with
+    | none => rfl
+    | some τ => exact False.elim (hG ⟨τ, h⟩)
+  have hcur : (Config.mk G σ F S Q).find G = some σ := by
+    simp [Config.find, Config.fixpoints, Config.curState, hFG]
+  have hglue : Sigma.Sub F.glue Sg := by
+    constructor
+    all_goals
+      intro G'
+      cases hFG' : F G' with
+      | none => simp [FixPoints.glue, hFG']
+      | some τ =>
+          have hfind : (Config.mk G σ F S Q).find G' = some τ := by
+            simp [Config.find, Config.fixpoints, hFG']
+          first
+            | intro C; simpa only [FixPoints.glue_param hFG', Config.all_data_param hfind] using hsub.param G' C
+            | intro C; simpa only [FixPoints.glue_fld₁ hFG', Config.all_data_fld₁ hfind] using hsub.fld₁ G' C
+            | intro C; simpa only [FixPoints.glue_fld₂ hFG', Config.all_data_fld₂ hfind] using hsub.fld₂ G' C
+            | intro C; simpa only [FixPoints.glue_ret hFG', Config.all_data_ret hfind] using hsub.ret G' C
+            | simpa only [FixPoints.glue_gfld₁ hFG', Config.all_data_gfld₁ hfind] using hsub.gfld₁ G'
+            | simpa only [FixPoints.glue_gfld₂ hFG', Config.all_data_gfld₂ hfind] using hsub.gfld₂ G'
+            | simpa only [FixPoints.glue_rm hFG', Config.all_data_rm hfind] using hsub.rm G'
+            | intro C; simpa only [FixPoints.glue_this hFG', Config.all_data_this hfind] using hsub.this G' C
+  refine ⟨hglue, ?_⟩
+  constructor
+  all_goals
+    first
+      | intro C; simpa only [Config.all_data_param hcur] using hsub.param G C
+      | intro C; simpa only [Config.all_data_fld₁ hcur] using hsub.fld₁ G C
+      | intro C; simpa only [Config.all_data_fld₂ hcur] using hsub.fld₂ G C
+      | intro C; simpa only [Config.all_data_ret hcur] using hsub.ret G C
+      | simpa only [Config.all_data_gfld₁ hcur] using hsub.gfld₁ G
+      | simpa only [Config.all_data_gfld₂ hcur] using hsub.gfld₂ G
+      | simpa only [Config.all_data_rm hcur] using hsub.rm G
+      | intro C; simpa only [Config.all_data_this hcur] using hsub.this G C
+
+theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G} {Sg : Sigma}
+    {S : Stack} {Q : Queue} (hSg : Proof.FixPoint Sg L)
+    (hG : ¬ InFixPoint F G)
+    (hsub : Sigma.Sub (Config.mk G σ F S Q).all_data Sg) (hg : Grow L F G σ σ') :
     State.Sub σ' (State.ofSigma Sg G) := by
+  obtain ⟨hF, hσ⟩ := sub_all_data hG hsub
   cases hg with
   | @rmInit e₁ e₂ K₁ K₂ hobj hc₁ hc₂ =>
       obtain ⟨K₁', h₁', hs₁⟩ := calls0_bridge hF hσ hc₁
@@ -363,12 +406,6 @@ theorem grow_sub1 {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G
       · exact hσ.this C' hx
       · exact ht C' (Set.image_mono hs₁ hC) (Set.image_mono hs₁ hx)
 
-theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G} {Sg : Sigma}
-    {S : Stack} {Q : Queue} (hSg : Proof.FixPoint Sg L)
-    (hF : Sigma.Sub (Config.mk G σ F S Q).all_data Sg) (hg : Grow L F G σ σ') :
-    State.Sub σ' (State.ofSigma Sg G) := by
-  sorry
-
 def Config.less (c : Config) (Sg : Sigma) : Prop :=
   match c with
   | .mk _ _ _ _ _ => c.all_data ≤ Sg
@@ -380,94 +417,163 @@ def LessThanInv (c : Config) (L : Program) : Prop :=
 
 theorem Config.all_data_zero {L : Program} {hL : L.WellFormed}
     : (Config.start L hL).all_data = ⊥ := by
-  -- have h : (Config.start L hL).all_data ≤ ⊥ := by
-  --     simp [Config.all_data, Config.start]
-  --     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  --     · sorry
-  --     · sorry
-  --     · sorry
-  --     · sorry
-  --     · sorry
-  --     · sorry
-  --     · sorry
-  --     · sorry
-  -- exact (le_bot_iff : (Config.start L hL).all_data ≤ (⊥ : Sigma) ↔ (Config.start L hL).all_data = ⊥).mp h
   change (Config.start L hL).all_data =
-      { Param := fun _ _ => ∅,
-        Fld₁  := fun _ _ => ∅,
-        Fld₂  := fun _ _ => ∅,
-        Ret   := fun _ _ => ∅,
-        GFld₁ := fun _ => ∅,
-        GFld₂ := fun _ => ∅,
-        RM    := fun _ => ∅,
-        This  := fun _ _ => ∅ }
+    { Param := fun _ _ => ∅, Fld₁ := fun _ _ => ∅,
+      Fld₂ := fun _ _ => ∅, Ret := fun _ _ => ∅,
+      GFld₁ := fun _ => ∅, GFld₂ := fun _ => ∅,
+      RM := fun _ => ∅, This := fun _ _ => ∅ }
+  ext G C <;> simp [Config.start, Config.all_data, Config.find, Config.fixpoints,
+    Config.curState, Config.stack, Stack.find, State.zero] <;>
+    split_ifs with h <;> (try subst G) <;> simp_all
+
+theorem Config.all_data_suspend_eq {F : FixPoints} {G G₀ : GlobName} {σ : State G}
+    {S : Stack} {Q : Queue} (hne : G₀ ≠ G) (hnS : G₀ ∉ S.globs) :
+    (Config.mk G σ F S Q).all_data =
+      (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).all_data := by
+  have hstack : S.find G₀ = none := by
+    cases hfind : S.find G₀ with
+    | none => rfl
+    | some τ => exact False.elim (hnS (stack_find_to_globs hfind))
+  have hother (G' : GlobName) (h0 : G' ≠ G₀) :
+      (Config.mk G σ F S Q).find G' =
+      (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).find G' := by
+    by_cases hG : G' = G
+    · subst G'
+      simp [Config.find, Config.fixpoints, Config.curState, Config.stack,
+        Stack.find, hne]
+    · have hG' : G ≠ G' := Ne.symm hG
+      simp [Config.find, Config.fixpoints, Config.curState, Config.stack,
+        Stack.find, hG', h0.symm]
   apply Proof.Sigma.ext
-  · funext G C
-    by_cases hG : L.GlobNames.head hL.left = G
-    · subst hG
-      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero]
-    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero, hG]
-  · funext G C
-    by_cases hG : L.GlobNames.head hL.left = G
-    · subst hG
-      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero]
-    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero, hG]
-  · funext G C
-    by_cases hG : L.GlobNames.head hL.left = G
-    · subst hG
-      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero]
-    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero, hG]
-  · funext G C
-    by_cases hG : L.GlobNames.head hL.left = G
-    · subst hG
-      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero]
-    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero, hG]
-  · funext G
-    by_cases hG : L.GlobNames.head hL.left = G
-    · subst hG
-      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero]
-    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero, hG]
-  · funext G
-    by_cases hG : L.GlobNames.head hL.left = G
-    · subst hG
-      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero]
-    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero, hG]
-  · funext G
-    by_cases hG : L.GlobNames.head hL.left = G
-    · subst hG
-      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero]
-    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero, hG]
-  · funext G C
-    by_cases hG : L.GlobNames.head hL.left = G
-    · subst hG
-      simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero]
-    · simp [Config.all_data, Config.start, Config.find, Config.fixpoints,
-        Config.stack, Config.curState, Stack.find, State.zero, hG]
+  all_goals
+    funext G' C
+    by_cases h0 : G' = G₀
+    · subst G'
+      cases hF : F G₀ with
+      | none =>
+        simp [Config.all_data, Config.find, Config.fixpoints, Config.curState,
+          Config.stack, Stack.find, State.zero, hF, hstack, hne.symm]
+      | some τ =>
+        simp [Config.all_data, Config.find, Config.fixpoints, hF]
+    · simp only [Config.all_data, hother G' h0]
+
+theorem Config.all_data_resume_eq {G G₀ : GlobName} {σ₀ : State G₀} {σ : State G}
+    {F : FixPoints} {S : Stack} {Q : Queue}
+    (hwf : Config.WellFormed (.mk G σ F (⟨G₀, σ₀⟩ :: S) Q))
+    (hwf' : Config.WellFormed (.mk G₀ σ₀ (F.insert G σ) S Q))
+    : Config.all_data (.mk G σ F (⟨G₀, σ₀⟩ :: S) Q) =
+        Config.all_data (.mk G₀ σ₀ (F.insert G σ) S Q) := by
+  have hne : G ≠ G₀ := by
+    intro heq
+    subst heq
+    have h := hwf.left.left
+    simp [Stack.globs] at h
+  have hG : (Config.mk G σ F (⟨G₀, σ₀⟩ :: S) Q).find G = some σ :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf
+  have hG' : (Config.mk G₀ σ₀ (F.insert G σ) S Q).find G = σ := by
+    have hF : (F.insert G σ) G = σ := by simp [FixPoints.insert]
+    simp [Config.find]
+    exact Or.inl hF
+  have hG₀ : (Config.mk G σ F (⟨G₀, σ₀⟩ :: S) Q).find G₀ = σ₀ :=
+    Config.find_curStack rfl hwf (by simp [Stack.find]) hne
+  have hG₀' : (Config.mk G₀ σ₀ (F.insert G σ) S Q).find G₀ = σ₀ :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf'
+  have hotherFixpoint (G' : GlobName) (hne' : G ≠ G' ∧ G₀ ≠ G') :
+      F G' = (F.insert G σ) G' := by
+    simp [FixPoints.insert_other (σ := σ) (F := F) hne'.left.symm]
+  have hotherStack (G' : GlobName) (hne' : G ≠ G' ∧ G₀ ≠ G') :
+      Stack.find (⟨G₀, σ₀⟩ :: S) G' = Stack.find S G' := by
+    simp [Stack.find, hne'.right]
+  have hother (G' : GlobName) (hne' : G ≠ G' ∧ G₀ ≠ G') :
+      (Config.mk G σ F (⟨G₀, σ₀⟩ :: S) Q).find G' = (Config.mk G₀ σ₀ (F.insert G σ) S Q).find G' := by
+    simp [Config.find, Config.curState, Config.fixpoints, Config.stack, hne'.left, hne'.right, hotherStack, hotherFixpoint]
+  have hfind (G' : GlobName) :
+      (Config.mk G σ F (⟨G₀, σ₀⟩ :: S) Q).find G' =
+      (Config.mk G₀ σ₀ (F.insert G σ) S Q).find G' := by
+    by_cases heq : G = G'
+    · subst G'; rw [hG, hG']
+    · by_cases heq₀ : G₀ = G'
+      · subst G'; rw [hG₀, hG₀']
+      · exact hother G' ⟨heq, heq₀⟩
+  apply Proof.Sigma.ext
+  all_goals
+    funext G' C
+    simp only [Config.all_data, hfind G']
+
+theorem Config.all_data_resume {G G₀ : GlobName} {σ₀ : State G₀} {σ : State G}
+    {F : FixPoints} {S : Stack} {Q : Queue}
+    (hwf : Config.WellFormed (.mk G σ F (⟨G₀, σ₀⟩ :: S) Q))
+    (hwf' : Config.WellFormed (.mk G₀ σ₀ (F.insert G σ) S Q))
+    : Config.all_data (.mk G σ F (⟨G₀, σ₀⟩ :: S) Q) ≤
+        Config.all_data (.mk G₀ σ₀ (F.insert G σ) S Q) := by
+  exact le_of_eq (Config.all_data_resume_eq hwf hwf')
+
+theorem Config.all_data_next_eq {G G₀ : GlobName} {σ : State G}
+    {F : FixPoints} {Q : Queue}
+    (hwf : Config.WellFormed (.mk G σ F List.nil (G₀ :: Q)))
+    (hwf' : Config.WellFormed (.mk G₀ (State.zero G₀) (F.insert G σ) List.nil Q))
+    (hnotfix : ¬ InFixPoint F G₀) :
+    Config.all_data (.mk G σ F List.nil (G₀ :: Q)) =
+      Config.all_data (.mk G₀ (State.zero G₀) (F.insert G σ) List.nil Q) := by
+  have hne : G ≠ G₀ := by
+    intro heq
+    subst G₀
+    exact hwf.left.right.left (by simp)
+  have hG : (Config.mk G σ F List.nil (G₀ :: Q)).find G = some σ :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf
+  have hG' : (Config.mk G₀ (State.zero G₀) (F.insert G σ) List.nil Q).find G = some σ := by
+    have hF : (F.insert G σ) G = some σ := by simp [FixPoints.insert]
+    simp [Config.find]
+    exact Or.inl hF
+  have hG₀ : (Config.mk G σ F List.nil (G₀ :: Q)).find G₀ = none :=
+    Config.find_none rfl hwf hnotfix hne (by simp [Stack.find])
+  have hG₀' : (Config.mk G₀ (State.zero G₀) (F.insert G σ) List.nil Q).find G₀ =
+      some (State.zero G₀) :=
+    Config.find_curState rfl (by simp [Config.curState]) hwf'
+  have hother (G' : GlobName) (hG : G ≠ G') (hG₀ : G₀ ≠ G') :
+      (Config.mk G σ F List.nil (G₀ :: Q)).find G' =
+        (Config.mk G₀ (State.zero G₀) (F.insert G σ) List.nil Q).find G' := by
+    simp [Config.find, Config.curState, Config.fixpoints, Config.stack,
+      Stack.find, hG, hG₀, FixPoints.insert_other hG.symm]
+  apply Proof.Sigma.ext
+  all_goals
+    funext G' C
+    by_cases heq₀ : G₀ = G'
+    · subst G'
+      simp only [Config.all_data, hG₀, hG₀']
+      simp [State.zero]
+    · by_cases heq : G = G'
+      · subst G'
+        simp only [Config.all_data, hG, hG']
+      · simp only [Config.all_data, hother G' heq heq₀]
+
+theorem Config.all_data_finish_eq {G : GlobName} {σ : State G} {F : FixPoints}
+    (hwf : Config.WellFormed (.mk G σ F List.nil List.nil)) :
+    Config.all_data (.mk G σ F List.nil List.nil) = (F.insert G σ).glue := by
+  have hfind (G' : GlobName) :
+      (Config.mk G σ F List.nil List.nil).find G' = (F.insert G σ) G' := by
+    by_cases heq : G = G'
+    · subst G'
+      rw [Config.find_curState rfl (by simp [Config.curState]) hwf,
+        FixPoints.insert_self]
+    · simp [Config.find, Config.fixpoints, Config.curState, Config.stack,
+        Stack.find, heq, FixPoints.insert_other (Ne.symm heq)]
+  apply Proof.Sigma.ext
+  all_goals
+    funext G' C
+    simp only [Config.all_data, FixPoints.glue, hfind G']
 
 theorem less_than_step {L : Program} {c c' : Config}
     (h : LessThanInv c L) (hstep : Solve L c c')
+    (hwf : Config.WellFormed c)
     : LessThanInv c' L := by
   intro Sg hSg
+  have hwf' := config_wellformed_step hstep hwf
   cases hstep with
   | @step G σ σ' F S Q hg =>
     have ih := h Sg hSg
     change (Config.mk G σ F S Q).all_data ≤ Sg at ih
-    have hgs := grow_sub hSg ih hg
+    have hgs := grow_sub hSg hwf.2.1 ih hg
     change (Config.mk G σ' F S Q).all_data ≤ Sg
     cases hFG : F G with
     | some σfix =>
@@ -507,53 +613,27 @@ theorem less_than_step {L : Program} {c c' : Config}
     have ih := h Sg hSg
     change (Config.mk G σ F S Q).all_data ≤ Sg at ih
     change (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).all_data ≤ Sg
-    have hstack : S.find G₀ = none := by
-      cases hfind : S.find G₀ with
-      | none => rfl
-      | some τ => exact False.elim (hnS (stack_find_to_globs hfind))
-    have hother (G' : GlobName) (h0 : G' ≠ G₀) :
-        (Config.mk G σ F S Q).find G' =
-        (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).find G' := by
-      by_cases hG : G' = G
-      · subst G'
-        simp [Config.find, Config.fixpoints, Config.curState, Config.stack,
-          Stack.find, hne]
-      · have hG' : G ≠ G' := Ne.symm hG
-        simp [Config.find, Config.fixpoints, Config.curState, Config.stack,
-          Stack.find, hG', h0.symm]
-    have hdata : (Config.mk G σ F S Q).all_data =
-        (Config.mk G₀ (State.zero G₀) F (⟨G, σ⟩ :: S) (Q.remove G₀)).all_data := by
-      apply Proof.Sigma.ext
-      all_goals
-        funext G' C
-        by_cases h0 : G' = G₀
-        · subst G'
-          cases hF : F G₀ with
-          | none =>
-            simp [Config.all_data, Config.find, Config.fixpoints, Config.curState,
-              Config.stack, Stack.find, State.zero, hF, hstack, hne.symm]
-          | some τ =>
-            simp [Config.all_data, Config.find, Config.fixpoints, hF]
-        · simp only [Config.all_data, hother G' h0]
-    rw [hdata] at ih
+    rw [Config.all_data_suspend_eq hne hnS] at ih
     exact ih
   | cycle _ => trivial
   | @resume G G' σ σ' F S Q _ =>
     have ih := h Sg hSg
-    -- theorem saying everything aside G G' returns the same answer
-    -- List.mem_cons_self, List.mem_cons_of_mem
-    sorry
-  | @next G G₀ σ F Q _ _ =>
+    change (Config.mk G σ F (⟨G', σ'⟩ :: S) Q).all_data ≤ Sg at ih
+    change (Config.mk G' σ' (F.insert G σ) S Q).all_data ≤ Sg
+    rw [Config.all_data_resume_eq hwf hwf'] at ih
+    exact ih
+  | @next G G₀ σ F Q _ hnotfix =>
     have ih := h Sg hSg
-    simp [Config.less]
-    -- theorem saying everything aside from
-    -- G returns the same answer.
-    sorry
+    change (Config.mk G σ F List.nil (G₀ :: Q)).all_data ≤ Sg at ih
+    change (Config.mk G₀ (State.zero G₀) (F.insert G σ) List.nil Q).all_data ≤ Sg
+    rw [Config.all_data_next_eq hwf hwf' hnotfix] at ih
+    exact ih
   | @finish G σ F hSt =>
     have ih := h Sg hSg
-    simp [Config.less]
-
-    sorry
+    change (Config.mk G σ F List.nil List.nil).all_data ≤ Sg at ih
+    change (F.insert G σ).glue ≤ Sg
+    rw [Config.all_data_finish_eq hwf] at ih
+    exact ih
 
 theorem less_than {L : Program} (hL : L.WellFormed) {c : Config}
     (hstar : Solve.Star L (Config.start L hL) c)
@@ -564,7 +644,7 @@ theorem less_than {L : Program} (hL : L.WellFormed) {c : Config}
       change (Config.start L hL).all_data ≤ σ
       rw [Config.all_data_zero (hL := hL)]
       exact bot_le
-  | tail hr hgrow ih => exact less_than_step ih hgrow
+  | tail hr hgrow ih => exact less_than_step ih hgrow (config_wellformed hr)
 
 theorem stack_find_sub {S : Stack} {Sg : Proof.Sigma}
     (hS : ∀ p ∈ S, State.Sub p.2 (State.ofSigma Sg p.1)) :
