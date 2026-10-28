@@ -199,7 +199,7 @@ structure FixPoint (G : GlobName) (σ : State G) (L : Program) (F : FixPoints)
       Calls0 σ L F e₁ K₁ → Calls0 σ L F e₂ K₂ → (K₁ ∪ K₂) ⊆ σ.RM
   rm_closed : ∀ {C body K}, C ∈ σ.RM → Program.HasClass L C body →
       Calls C σ L F body K → K ⊆ σ.RM
-  ret_init : ∀ {C e K Dp}, Program.HasClass L C e →
+  ret_init : ∀ {C e K Dp}, C ∈ σ.RM → Program.HasClass L C e →
       KJ C σ L F e K Dp → K ⊆ σ.Ret C
   gfld_init_one : ∀ {e₁ e₂ K₁ Dp₁}, Program.HasObject L G e₁ e₂ →
       KJ0 σ L F e₁ K₁ Dp₁ → K₁ ⊆ σ.GFld Idx.one
@@ -287,7 +287,7 @@ inductive Grow (L : Program) (F : FixPoints) (G : GlobName) : State G → State 
   | rmClosed {σ C body K} :
       C ∈ σ.RM → Program.HasClass L C body → Calls C σ L F body K →
       Grow L F G σ (σ.addRM K)
-  | retInit {σ C e K D} (he : Program.HasClass L C e) (hK : KJ C σ L F e K D) :
+  | retInit {σ C e K D} (hrm : C ∈ σ.RM) (he : Program.HasClass L C e) (hK : KJ C σ L F e K D) :
       Grow L F G σ (σ.addRet C K)
   | gfldOne {σ e₁ e₂ K₁ D₁} :
       Program.HasObject L G e₁ e₂ → (hK : KJ0 σ L F e₁ K₁ D₁) →

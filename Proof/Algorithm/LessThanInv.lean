@@ -346,7 +346,7 @@ theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
       obtain ⟨K', h', hs⟩ := calls_bridge hF hσ hc
       exact { hσ with
         rm := Set.union_subset hσ.rm (hs.trans (hSg.rm_closed (hσ.rm hRM) hcls h')) }
-  | @retInit C e K D he hK =>
+  | @retInit C e K D hrm he hK =>
       obtain ⟨K', hK', hs⟩ := kj_bridge hF hσ hK
       refine { hσ with ret := ?_ }
       intro C' x hx
@@ -355,7 +355,7 @@ theorem grow_sub {L : Program} {F : FixPoints} {G : GlobName} {σ σ' : State G}
       · subst hCC
         rcases hx with hx | hx
         · exact hσ.ret C' hx
-        · exact hSg.ret_init he hK' (hs hx)
+        · exact hSg.ret_init (hσ.rm hrm) he hK' (hs hx)
       · exact hσ.ret C' hx
   | @gfldOne e₁ e₂ K₁ D₁ hobj hK =>
       obtain ⟨K₁', hK₁', hs₁⟩ := kj0_bridge hF hσ hK

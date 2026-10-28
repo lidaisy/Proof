@@ -137,7 +137,7 @@ structure FixPoint (σ : Sigma) (L : Program) : Prop where
       Calls0 G σ L e₁ K₁ → Calls0 G σ L e₂ K₂ → (K₁ ∪ K₂) ⊆ σ.RM G
   rm_closed : ∀ {G C body K}, C ∈ σ.RM G → Program.HasClass L C body →
       Calls G C σ L body K → K ⊆ σ.RM G
-  ret_init : ∀ {G C e K}, Program.HasClass L C e →
+  ret_init : ∀ {G C e K}, C ∈ σ.RM G → Program.HasClass L C e →
       KJ G C σ L e K → K ⊆ σ.Ret G C
   gfld_init_one : ∀ {G e₁ e₂ K₁}, Program.HasObject L G e₁ e₂ →
       KJ0 G σ L e₁ K₁ → K₁ ⊆ σ.GFld Idx.one G

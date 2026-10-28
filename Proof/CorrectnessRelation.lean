@@ -1037,7 +1037,7 @@ theorem inv_step_app {σ : Sigma} {L : Program} {G G₀ : GlobName}
       intro K hK
       obtain ⟨K', hK', hsub⟩ :=
         KJR.to_kjc (c := some C) hthisB hparamB (fun hc => nomatch hc) hbvf hK
-      exact hsub.trans (hσ.ret_init hbody hK')
+      exact hsub.trans (hσ.ret_init (hfresh i₀ cfs₀ r₀ htopS).2.2 hbody hK')
     · -- RuntimeParamFldThisInv
       intro G' i' cfs' r' hti' htiG
       obtain ⟨i₀, cfs₀, r₀, htopS, rfl⟩ := hpin G' i' cfs' r' hti' htiG
