@@ -102,10 +102,6 @@ theorem FilteredProgram.object {L L' : Program} {G : GlobName}
         · exact ih hG
       · exact ih (by simpa [FilteredProgram, Program.GlobNames, h] using hG)
 
-theorem calls_bridge {σ₀ : State G₀}
-    (h : Proof.Calls0 G (F.insert G₀ σ₀).glue e₁ K₁)
-    : Calls0 σ₀ F e₁ K₁ := sorry
-
 private theorem kj0_glue_bridge {G : GlobName} {σ : State G}
     {F : FixPoints} {L : Program} {e : Expr} {K : Set Proof.OPair}
     (hσ : F G = some σ) (hst : Stable L F G σ)
@@ -155,7 +151,7 @@ private theorem kj0_glue_bridge {G : GlobName} {σ : State G}
     exact ⟨_, KJ0.val⟩
 
 /-- Bridge reachable calls when field projections only read current or solved owners. -/
-theorem calls0_bridge {G G₀ : GlobName} {σ : State G} {σ₀ : State G₀}
+theorem calls0_glue_bridge {G G₀ : GlobName} {σ : State G} {σ₀ : State G₀}
     {F : FixPoints} {L : Program} {e₁ : Expr}
     {K₁: Set Proof.ClassName} (hne : G ≠ G₀) (hσ : F G = some σ)
     (hst : Stable L (F.insert G₀ σ₀) G σ)
@@ -252,7 +248,7 @@ theorem algo_fixpoint_is_decl_fixpoint {c : Config}
         · subst heq
           simp only [FixPoints.glue, FixPoints.insert]
           exact hlocal.rm_init (e₁ := e₁) (e₂ := e₂)
-            (FilteredProgram.sub rfl _ hObj) (calls_bridge hC₁) (calls_bridge hC₂)
+            (FilteredProgram.sub rfl _ hObj) sorry sorry
         · have hFG : ∃ σ, F G = some σ := by
             simpa [InFixPoint, Config.fixpoints, FixPoints.insert_other heq] using
               (FilteredProgram.object rfl (hasObject_mem_globNames hObj))
